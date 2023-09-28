@@ -1,0 +1,86 @@
+
+[project]
+name = "pylibob"
+description = "非官方 LibOneBot Python 库，旨在帮助开发者实现 OneBot 12 标准。"
+authors = [
+    {name = "MingxuanGame", email = "MingxuanGame@outlook.com"},
+]
+dependencies = []
+requires-python = ">=3.8"
+readme = "README.md"
+dynamic = ["version"]
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm]
+version = { source = "file", path = "pylibob/version.py" }
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "ruff>=0.0.291",
+    "black>=23.9.1",
+]
+
+[tool.ruff]
+line-length = 79
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "RUF",      # ruff
+  "TRY",      # tryceratops
+  # "D",        # pydocstyle
+
+  # pylint
+  "PLW",      # Warning
+  "PLR",      # Refactor
+  "PLE",      # Error
+
+  "PTH",      # flake8-use-pathlib
+  "SLF",      # flake8-self
+  "RET",      # flake8-return
+  "RSE",      # flake8-raise
+  "T20",      # flake8-print
+  "PIE",      # flake8-pie
+  "ISC",      # flake8-implicit-str-concat
+  "C4",       # flake8-comprehensions
+  "COM",      # flake8-commas
+  "A",        # flake8-builtins
+  "B",        # flake8-bugbear
+  "ASYNC",    # flake8-async
+]
+ignore = ["PLR0913", "TRY003"]
+allowed-confusables = ["，", "。", "（", "）", "；"]
+
+[tool.ruff.isort]
+force-sort-within-sections = true
+extra-standard-library = ["typing_extensions"]
+force-wrap-aliases = true
+combine-as-imports = true
+order-by-type = true
+relative-imports-order = "closest-to-furthest"
+required-imports = ["from __future__ import annotations"]
+section-order = ["future", "standard-library", "first-party", "local-folder", "third-party"]
+
+[tool.pdm.scripts]
+lint = "ruff check ."
+fix = "ruff check --fix ."
+
+[tool.pyright]
+reportShadowedImports = false
+pythonVersion = "3.8"
+pythonPlatform = "All"
+executionEnvironments = [
+  { root = "./" },
+]
+
+[tool.black]
+extend-exclude = '''
+'''
+include = '\.pyi?$'
+line-length = 79
+skip-string-normalization = true
+target-version = ["py38", "py39", "py310", "py311"]

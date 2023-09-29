@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable, Coroutine, Dict
 
-from pylibob.connection import Connection
+from pylibob.asgi import _asgi_app
+from pylibob.connection import Connection, ServerConnection
 from pylibob.status import OK, UNKNOWN_SELF, UNSUPPORTED_ACTION, WHO_AM_I
 from pylibob.types import (
     ActionResponse,
@@ -12,6 +13,8 @@ from pylibob.types import (
     Event,
     FailedActionResponse,
 )
+
+import uvicorn
 
 ACTION_HANDLER = Callable[
     [Dict[str, Any], Bot],
@@ -30,6 +33,7 @@ class OneBotImpl:
         onebot_version: str = "12",
     ) -> None:
         self.conns = conns
+        self.conn_types = set()
         self.name = name
         self.version = version
         self.onebot_version = onebot_version
@@ -41,9 +45,17 @@ class OneBotImpl:
             f"{bot.platform}.{bot.user_id}": bot for bot in bots
         }
 
+        if not conns:
+            raise ValueError(
+                "Connections are empty, "
+                "OneBotImpl needs at least one connection to start",
+            )
         for conn in conns:
+            if conn.__class__ in self.conn_types:
+                continue
             conn._impl = self  # noqa: SLF001
             conn.init_connection()
+            self.conn_types.add(conn.__class__)
 
         self.actions["get_version"] = self.action_get_version
 
@@ -61,21 +73,21 @@ class OneBotImpl:
                 message="action is not supported",
             )
 
-        if len(self.bots) > 1:
-            if not bot_self:
-                return FailedActionResponse(
-                    retcode=WHO_AM_I,
-                    message="bot is not detect",
-                )
-            bot_id = f"{bot_self['platform']}.{bot_self['user_id']}"
-            if bot_id not in self.bots:
-                return FailedActionResponse(
-                    retcode=UNKNOWN_SELF,
-                    message=f"bot {bot_id} is not exist",
-                )
-            bot = bot_self[bot_id]
-        else:
-            bot = next(iter(self.bots.values()))
+        if len(self.bots) > 1 and not bot_self:
+            return FailedActionResponse(
+                retcode=WHO_AM_I,
+                message="bot is not detect",
+            )
+
+        bot_id = (
+            f"{bot_self['platform']}.{bot_self['user_id']}" if bot_self else ""
+        )
+        if bot_id and bot_id not in self.bots:
+            return FailedActionResponse(
+                retcode=UNKNOWN_SELF,
+                message=f"bot {bot_id} is not exist",
+            )
+        bot = self.bots.get(bot_id) or next(iter(self.bots.values()))
 
         data = await handler(params, bot)
         return ActionResponse("ok", OK, data, echo=echo)
@@ -115,3 +127,18 @@ class OneBotImpl:
             "good": self.is_good,
             "bots": [bot.to_dict() for bot in self.bots.values()],
         }
+
+    def _get_host(self) -> tuple[str, int] | None:
+        return next(
+            (
+                (conn.host, conn.port)
+                for conn in self.conns
+                if isinstance(conn, ServerConnection)
+            ),
+            None,
+        )
+
+    def run(self):
+        host = self._get_host()
+        if host is not None:
+            uvicorn.run(_asgi_app, host=host[0], port=host[1])

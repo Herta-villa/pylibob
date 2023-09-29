@@ -85,7 +85,20 @@ class Connection:
         raise NotImplementedError
 
 
-class HTTP(Connection):
+class ServerConnection(Connection):
+    def __init__(
+        self,
+        *,
+        access_token: str | None = None,
+        host: str = "0.0.0.0",
+        port: int = 8080,
+    ) -> None:
+        super().__init__(access_token=access_token)
+        self.host = host
+        self.port = port
+
+
+class HTTP(ServerConnection):
     def __init__(
         self,
         *,
@@ -95,9 +108,7 @@ class HTTP(Connection):
         event_enabled: bool = True,
         event_buffer_size: int = 20,
     ) -> None:
-        super().__init__(access_token=access_token)
-        self.host = host
-        self.port = port
+        super().__init__(access_token=access_token, host=host, port=port)
         self.event_queue: Queue[Event] | None = (
             Queue(maxsize=event_buffer_size) if event_enabled else None
         )

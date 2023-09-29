@@ -20,6 +20,21 @@ class Bot:
     def __hash__(self) -> int:
         return hash((self.platform, self.user_id))
 
+    def to_dict(self) -> dict[str, Any]:
+        # sourcery skip: dict-assign-update-to-union
+        dic = {
+            "self": {
+                "platform": self.platform,
+                "user_id": self.user_id,
+            },
+            "online": self.online,
+        }
+        if self.extra is not None:
+            dic.update(
+                {f"{self.platform}.{k}": v for k, v in self.extra.items()},
+            )
+        return dic
+
 
 class ContentType(str, Enum):
     JSON = "application/json"

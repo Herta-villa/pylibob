@@ -33,6 +33,7 @@ class OneBotImpl:
         self.name = name
         self.version = version
         self.onebot_version = onebot_version
+        self.is_good = True
         self.actions: dict[str, ACTION_HANDLER] = {}
         if not bots:
             raise ValueError("OneBotImpl needs at least one bot")
@@ -87,8 +88,30 @@ class OneBotImpl:
         task.add_done_callback(background_task.remove)
 
     async def action_get_version(self, params: dict[str, Any], bot: Bot):
+        """[元动作]获取版本信息
+        https://12.onebot.dev/interface/meta/actions/#get_version
+        """
         return {
             "impl": self.name,
             "version": self.version,
             "onebot_version": self.onebot_version,
+        }
+
+    async def action_get_supported_actions(
+        self,
+        params: dict[str, Any],
+        bot: Bot,
+    ):
+        """[元动作]获取支持的动作列表
+        https://12.onebot.dev/interface/meta/actions/#get_supported_actions
+        """
+        return list(self.actions.keys())
+
+    async def get_status(self, params: dict[str, Any], bot: Bot):
+        """[元动作]获取运行状态
+        https://12.onebot.dev/interface/meta/actions/#get_status
+        """
+        return {
+            "good": self.is_good,
+            "bots": [bot.to_dict() for bot in self.bots.values()],
         }

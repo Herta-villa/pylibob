@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from asyncio import Queue
 from dataclasses import asdict
 import json
-from queue import Queue
 from typing import TYPE_CHECKING, Any
 
 from pylibob.asgi import _asgi_app
@@ -132,7 +132,12 @@ class HTTP(Connection):
         # TODO: long polling
         timeout = params.get("timeout", 0)  # noqa: F841
         assert self.event_queue
-        return list(self.event_queue.queue)[: (limit or None)]
+        times = 1
+        events = []
+        while not self.event_queue.empty() and (limit == 0 or times <= limit):
+            events.append(await self.event_queue.get())
+            times += 1
+        return events
 
     def init_connection(self) -> None:
         _asgi_app.add_route(

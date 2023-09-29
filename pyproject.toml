@@ -5,7 +5,11 @@ description = "非官方 LibOneBot Python 库，旨在帮助开发者实现 OneB
 authors = [
     {name = "MingxuanGame", email = "MingxuanGame@outlook.com"},
 ]
-dependencies = []
+dependencies = [
+    "starlette>=0.31.1",
+    "uvicorn[standard]>=0.23.2",
+    'tomli>=2.0.1 ; python_version < "3.11"',
+]
 requires-python = ">=3.8"
 readme = "README.md"
 dynamic = ["version"]

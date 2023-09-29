@@ -58,6 +58,30 @@ class OneBotImpl:
             self.conn_types.add(conn.__class__)
 
         self.actions["get_version"] = self.action_get_version
+        self.actions["get_status"] = self.action_get_status
+        self.actions[
+            "get_supported_actions"
+        ] = self.action_get_supported_actions
+
+    def register_action_handler(
+        self,
+        action: str,
+        func: ACTION_HANDLER,
+    ):
+        self.actions[action] = func
+        return func
+
+    def action(
+        self,
+        action: str,
+    ) -> Callable[[ACTION_HANDLER], ACTION_HANDLER]:
+        def wrapper(
+            func: ACTION_HANDLER,
+        ) -> ACTION_HANDLER:
+            self.register_action_handler(action, func)
+            return func
+
+        return wrapper
 
     async def handle_action(
         self,
@@ -119,7 +143,7 @@ class OneBotImpl:
         """
         return list(self.actions.keys())
 
-    async def get_status(self, params: dict[str, Any], bot: Bot):
+    async def action_get_status(self, params: dict[str, Any], bot: Bot):
         """[元动作]获取运行状态
         https://12.onebot.dev/interface/meta/actions/#get_status
         """

@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from asyncio import Queue
 from dataclasses import asdict
 import json
+from queue import Queue
+from typing import TYPE_CHECKING, Any
 
 from pylibob.asgi import _asgi_app
-from pylibob.impl import OneBotImpl
 from pylibob.status import BAD_REQUEST
 from pylibob.types import (
     ActionResponse,
+    Bot,
     BotSelf,
     ContentType,
+    Event,
     FailedActionResponse,
 )
 from pylibob.utils import authorize, detect_content_type
@@ -22,6 +24,9 @@ from starlette.status import (
     HTTP_415_UNSUPPORTED_MEDIA_TYPE,
 )
 
+if TYPE_CHECKING:
+    from pylibob.impl import OneBotImpl
+
 
 class Connection:
     def __init__(
@@ -30,11 +35,11 @@ class Connection:
         access_token: str | None = None,
     ) -> None:
         self.access_token = access_token
-        self._impl: OneBotImpl | None = None
+        self._impl: "OneBotImpl" | None = None
         super().__init__()
 
     @property
-    def impl(self) -> OneBotImpl:
+    def impl(self) -> "OneBotImpl":
         if self._impl is None:
             raise ValueError("OneBotImpl is not initialed")
         return self._impl
@@ -76,6 +81,9 @@ class Connection:
     def init_connection(self) -> None:
         pass
 
+    async def emit_event(self, event: Event) -> None:
+        raise NotImplementedError
+
 
 class HTTP(Connection):
     def __init__(
@@ -84,13 +92,15 @@ class HTTP(Connection):
         access_token: str | None = None,
         host: str = "0.0.0.0",
         port: int = 8080,
-        event_enabled: bool = False,
+        event_enabled: bool = True,
         event_buffer_size: int = 20,
     ) -> None:
         super().__init__(access_token=access_token)
         self.host = host
         self.port = port
-        (Queue(maxsize=event_buffer_size) if event_enabled else None)
+        self.event_queue: Queue[Event] | None = (
+            Queue(maxsize=event_buffer_size) if event_enabled else None
+        )
 
     async def receive_http_request(self, request: Request) -> Response:
         # 鉴权
@@ -117,6 +127,13 @@ class HTTP(Connection):
             ),
         )
 
+    async def action_get_latest_events(self, params: dict[str, Any], bot: Bot):
+        limit = params.get("limit", 0)
+        # TODO: long polling
+        timeout = params.get("timeout", 0)  # noqa: F841
+        assert self.event_queue
+        return list(self.event_queue.queue)[: (limit or None)]
+
     def init_connection(self) -> None:
         _asgi_app.add_route(
             "/",
@@ -125,3 +142,13 @@ class HTTP(Connection):
             f"{self.impl.name}-{self.impl.version}-http",
             False,
         )
+        if self.event_queue:
+            self.impl.actions[
+                "get_latest_events"
+            ] = self.action_get_latest_events
+
+    async def emit_event(self, event: Event) -> None:
+        if self.event_queue:
+            if self.event_queue.full():
+                self.event_queue.get_nowait()  # pop the oldest event
+            self.event_queue.put_nowait(event)

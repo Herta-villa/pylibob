@@ -48,3 +48,13 @@ def FailedActionResponse(
         message=message,
         echo=echo,
     )
+
+
+@dataclass
+class Event:
+    id: str  # noqa: A003
+    time: float
+    type: Literal["meta", "message", "notice", "request"]  # noqa: A003
+    detail_type: str
+    sub_type: str
+    self: BotSelf | None = None

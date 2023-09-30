@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal, TypedDict
 
+from msgspec import Struct
+
 
 class BotSelf(TypedDict):
     platform: str
@@ -41,8 +43,7 @@ class ContentType(str, Enum):
     MSGPACK = "application/msgpack"
 
 
-@dataclass
-class ActionResponse:
+class ActionResponse(Struct, kw_only=True):
     status: Literal["ok", "failed"]
     retcode: int
     data: Any = None
@@ -50,16 +51,5 @@ class ActionResponse:
     echo: str | None = None
 
 
-def FailedActionResponse(
-    retcode: int,
-    data: Any = None,
-    message: str | None = None,
-    echo: str | None = None,
-):
-    return ActionResponse(
-        "failed",
-        retcode,
-        data=data,
-        message=message,
-        echo=echo,
-    )
+class FailedActionResponse(ActionResponse, kw_only=True):
+    status: Literal["failed"] = "failed"

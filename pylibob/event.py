@@ -8,7 +8,7 @@ from pylibob.types import Bot
 import msgspec
 
 
-class Event(msgspec.Struct, dict=True, kw_only=True):
+class Event(msgspec.Struct, kw_only=True):
     id: str
     time: float
     type: Literal["meta", "message", "notice", "request"]
@@ -43,7 +43,6 @@ class Event(msgspec.Struct, dict=True, kw_only=True):
 class MetaEvent(
     Event,
     kw_only=True,
-    dict=True,
 ):
     type: Literal["meta"] = "meta"
 
@@ -51,7 +50,6 @@ class MetaEvent(
 class MetaConnect(
     MetaEvent,
     kw_only=True,
-    dict=True,
 ):
     detail_type: Literal["connect"] = "connect"
     version: dict[str, str]

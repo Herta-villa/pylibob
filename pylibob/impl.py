@@ -122,7 +122,7 @@ class OneBotImpl:
         bot = self.bots.get(bot_id) or next(iter(self.bots.values()))
 
         data = await handler(params, bot)
-        return ActionResponse("ok", OK, data, echo=echo)
+        return ActionResponse(status="ok", retcode=OK, data=data, echo=echo)
 
     async def emit(self, event: Event) -> None:
         task = asyncio.create_task(

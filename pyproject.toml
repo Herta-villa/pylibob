@@ -8,7 +8,7 @@ authors = [
 dependencies = [
     "starlette>=0.31.1",
     "uvicorn[standard]>=0.23.2",
-    'tomli>=2.0.1 ; python_version < "3.11"',
+    "msgspec>=0.18.2",
 ]
 requires-python = ">=3.8"
 readme = "README.md"

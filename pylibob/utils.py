@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from pylibob.types import ContentType
 
 from starlette.requests import HTTPConnection
+
+background_task = set()
 
 
 def detect_content_type(type_: str) -> ContentType | None:
@@ -24,4 +28,11 @@ def authorize(access_token: str | None, request: HTTPConnection) -> bool:
     return bool(
         (request_token := request.query_params.get("access_token"))
         and request_token == access_token,
+    )
+
+
+def asdict_exclude_none(obj):
+    return asdict(
+        obj,
+        dict_factory=lambda x: {k: v for k, v in x if v is not None},
     )

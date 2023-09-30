@@ -5,14 +5,15 @@ from typing import Any, Callable, Coroutine, Dict
 
 from pylibob.asgi import _asgi_app
 from pylibob.connection import Connection, ServerConnection
+from pylibob.event import Event
 from pylibob.status import OK, UNKNOWN_SELF, UNSUPPORTED_ACTION, WHO_AM_I
 from pylibob.types import (
     ActionResponse,
     Bot,
     BotSelf,
-    Event,
     FailedActionResponse,
 )
+from pylibob.utils import background_task
 
 import uvicorn
 
@@ -20,7 +21,6 @@ ACTION_HANDLER = Callable[
     [Dict[str, Any], Bot],
     Coroutine[Any, Any, Any],
 ]
-background_task = set()
 
 
 class OneBotImpl:
@@ -62,6 +62,14 @@ class OneBotImpl:
         self.actions[
             "get_supported_actions"
         ] = self.action_get_supported_actions
+
+    @property
+    def impl_ver(self) -> dict[str, str]:
+        return {
+            "impl": self.name,
+            "version": self.version,
+            "onebot_version": self.onebot_version,
+        }
 
     def register_action_handler(
         self,
@@ -127,11 +135,7 @@ class OneBotImpl:
         """[元动作]获取版本信息
         https://12.onebot.dev/interface/meta/actions/#get_version
         """
-        return {
-            "impl": self.name,
-            "version": self.version,
-            "onebot_version": self.onebot_version,
-        }
+        return self.impl_ver
 
     async def action_get_supported_actions(
         self,

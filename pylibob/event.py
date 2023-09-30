@@ -21,9 +21,7 @@ class Event(msgspec.Struct, kw_only=True):
     def dict(self) -> dict[str, Any]:
         # sourcery skip: dict-assign-update-to-union
         raw = {
-            k: v
-            for k, v in msgspec.structs.asdict(self).items()
-            if v is not None
+            k: v for k, v in msgspec.to_builtins(self).items() if v is not None
         }
         if extra := raw.pop("_extra", None):
             raw.update(

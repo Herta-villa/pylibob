@@ -1,26 +1,38 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, Coroutine, Dict
+from typing import Any, Callable, NamedTuple
 
 from pylibob.asgi import _asgi_app
 from pylibob.connection import Connection, ServerConnection
 from pylibob.event import Event
-from pylibob.status import OK, UNKNOWN_SELF, UNSUPPORTED_ACTION, WHO_AM_I
+from pylibob.status import (
+    BAD_PARAM,
+    OK,
+    UNKNOWN_SELF,
+    UNSUPPORTED_ACTION,
+    WHO_AM_I,
+)
 from pylibob.types import (
+    ActionHandler,
     ActionResponse,
     Bot,
     BotSelf,
     FailedActionResponse,
 )
-from pylibob.utils import background_task
+from pylibob.utils import analytic_typing, background_task
 
+import msgspec
+from msgspec import Struct, ValidationError, defstruct
 import uvicorn
 
-ACTION_HANDLER = Callable[
-    [Dict[str, Any], Bot],
-    Coroutine[Any, Any, Any],
-]
+
+class ActionHandlerWithValidate(NamedTuple):
+    handler: ActionHandler
+    keys: set[str]
+    model: type[Struct] | None
+    with_bot: bool
+    bot_parameter_name: str
 
 
 class OneBotImpl:
@@ -38,7 +50,7 @@ class OneBotImpl:
         self.version = version
         self.onebot_version = onebot_version
         self.is_good = True
-        self.actions: dict[str, ACTION_HANDLER] = {}
+        self.actions: dict[str, ActionHandlerWithValidate] = {}
         if not bots:
             raise ValueError("OneBotImpl needs at least one bot")
         self.bots: dict[str, Bot] = {
@@ -57,11 +69,12 @@ class OneBotImpl:
             conn.init_connection()
             self.conn_types.add(conn.__class__)
 
-        self.actions["get_version"] = self.action_get_version
-        self.actions["get_status"] = self.action_get_status
-        self.actions[
-            "get_supported_actions"
-        ] = self.action_get_supported_actions
+        self.register_action_handler("get_status", self.action_get_status)
+        self.register_action_handler("get_version", self.action_get_version)
+        self.register_action_handler(
+            "get_supported_actions",
+            self.action_get_supported_actions,
+        )
 
     @property
     def impl_ver(self) -> dict[str, str]:
@@ -74,18 +87,25 @@ class OneBotImpl:
     def register_action_handler(
         self,
         action: str,
-        func: ACTION_HANDLER,
-    ):
-        self.actions[action] = func
+        func: ActionHandler,
+    ) -> ActionHandler:
+        types, with_bot, bot_parameter_name = analytic_typing(func)
+        self.actions[action] = ActionHandlerWithValidate(
+            func,
+            {type_[0] for type_ in types},
+            defstruct(f"{action}ValidateModel", types),
+            with_bot,
+            bot_parameter_name,
+        )
         return func
 
     def action(
         self,
         action: str,
-    ) -> Callable[[ACTION_HANDLER], ACTION_HANDLER]:
+    ) -> Callable[[ActionHandler], ActionHandler]:
         def wrapper(
-            func: ACTION_HANDLER,
-        ) -> ACTION_HANDLER:
+            func: ActionHandler,
+        ) -> ActionHandler:
             self.register_action_handler(action, func)
             return func
 
@@ -98,13 +118,13 @@ class OneBotImpl:
         bot_self: BotSelf | None = None,
         echo: str | None = None,
     ) -> ActionResponse:
-        handler = self.actions.get(action)
-        if not handler:
+        action_handler = self.actions.get(action)
+        if not action_handler:
             return FailedActionResponse(
                 retcode=UNSUPPORTED_ACTION,
                 message="action is not supported",
             )
-
+        handler, types, model, with_bot, bot_parameter_name = action_handler
         if len(self.bots) > 1 and not bot_self:
             return FailedActionResponse(
                 retcode=WHO_AM_I,
@@ -120,8 +140,16 @@ class OneBotImpl:
                 message=f"bot {bot_id} is not exist",
             )
         bot = self.bots.get(bot_id) or next(iter(self.bots.values()))
-
-        data = await handler(params, bot)
+        if with_bot:
+            params[bot_parameter_name] = bot
+        try:
+            msgspec.convert(params, model)
+        except ValidationError as e:
+            return FailedActionResponse(retcode=BAD_PARAM, message=str(e))
+        new_params = {
+            param: params[param] for param in params if param in types
+        }
+        data = await handler(**new_params)
         return ActionResponse(status="ok", retcode=OK, data=data, echo=echo)
 
     async def emit(self, event: Event) -> None:
@@ -131,7 +159,7 @@ class OneBotImpl:
         background_task.add(task)
         task.add_done_callback(background_task.remove)
 
-    async def action_get_version(self, params: dict[str, Any], bot: Bot):
+    async def action_get_version(self):
         """[元动作]获取版本信息
         https://12.onebot.dev/interface/meta/actions/#get_version
         """
@@ -139,15 +167,13 @@ class OneBotImpl:
 
     async def action_get_supported_actions(
         self,
-        params: dict[str, Any],
-        bot: Bot,
     ):
         """[元动作]获取支持的动作列表
         https://12.onebot.dev/interface/meta/actions/#get_supported_actions
         """
         return list(self.actions.keys())
 
-    async def action_get_status(self, params: dict[str, Any], bot: Bot):
+    async def action_get_status(self):
         """[元动作]获取运行状态
         https://12.onebot.dev/interface/meta/actions/#get_status
         """

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal, TypedDict
+from typing import Any, Callable, Coroutine, Literal, TypedDict
 
 from msgspec import Struct
 
@@ -53,3 +53,9 @@ class ActionResponse(Struct, kw_only=True):
 
 class FailedActionResponse(ActionResponse, kw_only=True):
     status: Literal["failed"] = "failed"
+
+
+ActionHandler = Callable[
+    ...,
+    Coroutine[Any, Any, Any],
+]

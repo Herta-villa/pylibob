@@ -4,7 +4,7 @@ import asyncio
 from asyncio import Queue
 import json
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from pylibob.asgi import _asgi_app
@@ -12,18 +12,17 @@ from pylibob.event import Event, MetaConnect
 from pylibob.status import BAD_REQUEST
 from pylibob.types import (
     ActionResponse,
-    Bot,
     BotSelf,
     ContentType,
     FailedActionResponse,
 )
 from pylibob.utils import (
-    asdict_exclude_none,
     authorize,
     background_task,
     detect_content_type,
 )
 
+import msgspec
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.status import (
@@ -140,16 +139,10 @@ class HTTP(ServerConnection):
             content_type=content_type,
             raw=await request.body(),
         )
-        return JSONResponse(
-            asdict_exclude_none(
-                resp,
-            ),
-        )
+        return JSONResponse(msgspec.to_builtins(resp))
 
-    async def action_get_latest_events(self, params: dict[str, Any], bot: Bot):
-        limit = params.get("limit", 0)
+    async def action_get_latest_events(self, limit: int = 0, timeout: int = 0):
         # TODO: long polling
-        timeout = params.get("timeout", 0)  # noqa: F841
         assert self.event_queue
         times = 1
         events = []
@@ -167,9 +160,10 @@ class HTTP(ServerConnection):
             False,
         )
         if self.event_queue:
-            self.impl.actions[
-                "get_latest_events"
-            ] = self.action_get_latest_events
+            self.impl.register_action_handler(
+                "get_latest_events",
+                self.action_get_latest_events,
+            )
 
     async def emit_event(self, event: Event) -> None:
         if self.event_queue:
@@ -215,7 +209,7 @@ class WebSocket(ServerConnection):
                 message = await ws.receive()
                 ws._raise_on_disconnect(message)  # noqa: SLF001
                 resp = await self.run_action(ContentType.JSON, message["text"])
-                await ws.send_json(asdict_exclude_none(resp))
+                await ws.send_json(msgspec.to_builtins(resp))
         except WebSocketDisconnect:
             self.ws.remove(ws)
 

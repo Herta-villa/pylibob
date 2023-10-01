@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 from asyncio import Queue
-import time
 from typing import TYPE_CHECKING, Any
-from uuid import uuid4
 
-from pylibob.asgi import _asgi_app, lifespan_manager
-from pylibob.event import Event, MetaConnect, MetaHeartbeat
+from pylibob.asgi import _asgi_app
+from pylibob.event import Event
 from pylibob.status import BAD_REQUEST
 from pylibob.types import (
     ActionResponse,
@@ -15,9 +12,7 @@ from pylibob.types import (
     FailedActionResponse,
 )
 from pylibob.utils import (
-    TaskManager,
     authorize,
-    background_task,
     detect_content_type,
 )
 from pylibob.version import __version__
@@ -32,11 +27,6 @@ from starlette.status import (
     HTTP_401_UNAUTHORIZED,
     HTTP_415_UNSUPPORTED_MEDIA_TYPE,
 )
-from starlette.websockets import (
-    WebSocket as WS,
-    WebSocketDisconnect,
-)
-from websockets.exceptions import ConnectionClosed
 
 if TYPE_CHECKING:
     from pylibob.impl import OneBotImpl
@@ -157,90 +147,6 @@ class HTTP(ServerConnection):
             self.event_queue.put_nowait(event)
 
 
-class WebSocket(ServerConnection):
-    def __init__(
-        self,
-        *,
-        access_token: str | None = None,
-        host: str = "0.0.0.0",
-        port: int = 8080,
-        enable_heartbeat: bool = True,
-        heartbeat_interval: int = 5000,
-    ) -> None:
-        super().__init__(access_token=access_token, host=host, port=port)
-        self.ws: list[WS] = []
-        self.enable_heartbeat = enable_heartbeat
-        if heartbeat_interval <= 0:
-            raise ValueError("The interval of heartbeat must be positive")
-        self.heartbeat_interval = heartbeat_interval
-        self._task_manager = TaskManager()
-        self._heartbeat_run = True
-
-    async def _heartbeat(self):
-        while self._heartbeat_run:
-            for ws in self.ws:
-                await ws.send_json(
-                    MetaHeartbeat(
-                        id=str(uuid4()),
-                        time=time.time(),
-                        interval=self.heartbeat_interval,
-                    ).dict(),
-                )
-            await self._task_manager.sleep(self.heartbeat_interval / 1000)
-
-    def init_connection(self) -> None:
-        _asgi_app.add_websocket_route(
-            "/",
-            self.handle_ws_request,
-            f"{self.impl.name}-{self.impl.version}-ws",
-        )
-
-        if not self.enable_heartbeat:
-            return
-
-        async def _start_heartbeat():
-            task = asyncio.create_task(self._heartbeat())
-            background_task.add(task)
-            task.add_done_callback(background_task.remove)
-
-        async def _stop_heartbeat():
-            self._heartbeat_run = False
-            self._task_manager.cancel_all()
-
-        lifespan_manager.on_startup(_start_heartbeat)
-        lifespan_manager.on_shutdown(_stop_heartbeat)
-
-    async def handle_ws_request(self, ws: WS):
-        if not authorize(self.access_token, ws):
-            # 如果鉴权失败，必须返回 HTTP 状态码 401 Unauthorized
-            await ws.close(HTTP_401_UNAUTHORIZED)
-        await ws.accept()
-
-        await ws.send_json(
-            MetaConnect(
-                id=str(uuid4()),
-                time=time.time(),
-                version=self.impl.impl_ver,
-            ).dict(),
-        )
-        self.ws.append(ws)
-        try:
-            while True:
-                message = await ws.receive()
-                ws._raise_on_disconnect(message)  # noqa: SLF001
-                resp = await self.run_action(message["text"])
-                await ws.send_json(msgspec.to_builtins(resp))
-        except (WebSocketDisconnect, ConnectionClosed):
-            self.ws.remove(ws)
-
-    async def emit_event(self, event: Event) -> None:
-        task = asyncio.create_task(
-            *[ws.send_json(event.dict()) for ws in self.ws],
-        )
-        background_task.add(task)
-        task.add_done_callback(background_task.remove)
-
-
 class ClientConnection(Connection):
     def __init__(
         self,
@@ -250,6 +156,14 @@ class ClientConnection(Connection):
     ) -> None:
         super().__init__(access_token=access_token)
         self.url = url
+
+    @property
+    def ua(self) -> str:
+        return (
+            f"OneBot/{self.impl.onebot_version} "
+            f"pylibob/{__version__} "
+            f"{self.impl.name}/{self.impl.version}"
+        )
 
 
 class HTTPWebhook(ClientConnection):
@@ -266,11 +180,7 @@ class HTTPWebhook(ClientConnection):
     def _make_header(self) -> dict[str, str]:
         header = {
             "Content-Type": "application/json",
-            "User-Agent": (
-                f"OneBot/{self.impl.onebot_version} "
-                f"pylibob/{__version__} "
-                f"{self.impl.name}/{self.impl.version}"
-            ),
+            "User-Agent": self.ua,
             "X-OneBot-Version": self.impl.onebot_version,
             "X-Impl": self.impl.name,
         }

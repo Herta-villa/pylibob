@@ -2,18 +2,17 @@
 [project]
 name = "pylibob"
 description = "非官方 LibOneBot Python 库，旨在帮助开发者实现 OneBot 12 标准。"
-authors = [
-    {name = "MingxuanGame", email = "MingxuanGame@outlook.com"},
-]
+authors = [{ name = "MingxuanGame", email = "MingxuanGame@outlook.com" }]
 dependencies = [
-    "starlette>=0.31.1",
-    "uvicorn[standard]>=0.23.2",
-    "msgspec>=0.18.2",
+  "starlette>=0.31.1",
+  "uvicorn[standard]>=0.23.2",
+  "msgspec>=0.18.2",
+  'typing_extensions>=4.8.0,<5 ; python_version<="3.8"',
 ]
 requires-python = ">=3.8"
 readme = "README.md"
 dynamic = ["version"]
-license = {text = "MIT"}
+license = { text = "MIT" }
 
 [build-system]
 requires = ["pdm-backend"]
@@ -23,38 +22,36 @@ build-backend = "pdm.backend"
 version = { source = "file", path = "pylibob/version.py" }
 
 [tool.pdm.dev-dependencies]
-dev = [
-    "ruff>=0.0.291",
-    "black>=23.9.1",
-]
+dev = ["ruff>=0.0.291", "black>=23.9.1"]
 
 [tool.ruff]
 line-length = 79
 select = [
-  "E", "W",   # pycodestyle
-  "F",        # pyflakes
-  "I",        # isort
-  "RUF",      # ruff
-  "TRY",      # tryceratops
+  "E",
+  "W",   # pycodestyle
+  "F",   # pyflakes
+  "I",   # isort
+  "RUF", # ruff
+  "TRY", # tryceratops
   # "D",        # pydocstyle
 
   # pylint
-  "PLW",      # Warning
-  "PLR",      # Refactor
-  "PLE",      # Error
+  "PLW", # Warning
+  "PLR", # Refactor
+  "PLE", # Error
 
-  "PTH",      # flake8-use-pathlib
-  "SLF",      # flake8-self
-  "RET",      # flake8-return
-  "RSE",      # flake8-raise
-  "T20",      # flake8-print
-  "PIE",      # flake8-pie
-  "ISC",      # flake8-implicit-str-concat
-  "C4",       # flake8-comprehensions
-  "COM",      # flake8-commas
-  "A",        # flake8-builtins
-  "B",        # flake8-bugbear
-  "ASYNC",    # flake8-async
+  "PTH",   # flake8-use-pathlib
+  "SLF",   # flake8-self
+  "RET",   # flake8-return
+  "RSE",   # flake8-raise
+  "T20",   # flake8-print
+  "PIE",   # flake8-pie
+  "ISC",   # flake8-implicit-str-concat
+  "C4",    # flake8-comprehensions
+  "COM",   # flake8-commas
+  "A",     # flake8-builtins
+  "B",     # flake8-bugbear
+  "ASYNC", # flake8-async
 ]
 ignore = ["PLR0913", "TRY003"]
 allowed-confusables = ["，", "。", "（", "）", "；"]
@@ -67,7 +64,13 @@ combine-as-imports = true
 order-by-type = true
 relative-imports-order = "closest-to-furthest"
 required-imports = ["from __future__ import annotations"]
-section-order = ["future", "standard-library", "first-party", "local-folder", "third-party"]
+section-order = [
+  "future",
+  "standard-library",
+  "first-party",
+  "local-folder",
+  "third-party",
+]
 
 [tool.pdm.scripts]
 lint = "ruff check ."
@@ -77,9 +80,7 @@ fix = "ruff check --fix ."
 reportShadowedImports = false
 pythonVersion = "3.8"
 pythonPlatform = "All"
-executionEnvironments = [
-  { root = "./" },
-]
+executionEnvironments = [{ root = "./" }]
 
 [tool.black]
 extend-exclude = '''

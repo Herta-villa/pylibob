@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from enum import Enum, auto
 import inspect
-from typing import Any
+import sys
+from typing import Any, get_origin
 
 from pylibob.types import ActionHandler, Bot, ContentType
 
 from starlette.requests import HTTPConnection
+
+if sys.version_info >= (3, 9):
+    from typing import Annotated
+else:
+    from typing_extensions import Annotated
+
 
 background_task = set()
 
@@ -40,24 +48,34 @@ def asdict_exclude_none(obj):
     )
 
 
+class TypingType(Enum):
+    NORMAL = auto()
+    BOT = auto()
+    ANNOTATED = auto()
+
+
 def analytic_typing(
     func: ActionHandler,
-) -> tuple[list[tuple[str, type] | tuple[str, type, Any]], bool, str]:
+):
     signature = inspect.signature(func)
-    types = []
-    with_bot = False
-    bot_parameter_name = ""
+    types: list[tuple[str, type, Any, TypingType]] = []
     for name, parameter in signature.parameters.items():
         if (annotation := parameter.annotation) is inspect.Parameter.empty:
             raise TypeError(f"Parameter `{name}` has no annotation")
         if inspect.ismethod(func) and parameter.name == "self":
             continue
+        default = parameter.default
         if annotation is Bot:
-            with_bot = True
-            bot_parameter_name = name
-        if default := parameter.default is not inspect.Parameter.empty:
-            type_ = (name, annotation, default)
+            type_ = (name, annotation, inspect.Parameter.empty, TypingType.BOT)
+        elif get_origin(annotation) is Annotated:
+            annotation: Annotated
+            if not isinstance(annotation.__metadata__[0], str):
+                raise TypeError(
+                    f"The first metadata of Annotated of param `{parameter!s}`"
+                    " is not str",
+                )
+            type_ = (name, annotation, default, TypingType.ANNOTATED)
         else:
-            type_ = (name, annotation)
+            type_ = (name, annotation, default, TypingType.NORMAL)
         types.append(type_)
-    return types, with_bot, bot_parameter_name
+    return types

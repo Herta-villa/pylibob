@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable, NamedTuple
+import inspect
+import sys
+from typing import Any, Callable, NamedTuple, cast
 
 from pylibob.asgi import _asgi_app
 from pylibob.connection import Connection, ServerConnection
@@ -11,6 +13,7 @@ from pylibob.status import (
     OK,
     UNKNOWN_SELF,
     UNSUPPORTED_ACTION,
+    UNSUPPORTED_PARAM,
     WHO_AM_I,
 )
 from pylibob.types import (
@@ -20,19 +23,23 @@ from pylibob.types import (
     BotSelf,
     FailedActionResponse,
 )
-from pylibob.utils import analytic_typing, background_task
+from pylibob.utils import TypingType, analytic_typing, background_task
 
 import msgspec
 from msgspec import Struct, ValidationError, defstruct
 import uvicorn
 
+if sys.version_info >= (3, 9):
+    from typing import Annotated
+else:
+    from typing_extensions import Annotated
+
 
 class ActionHandlerWithValidate(NamedTuple):
     handler: ActionHandler
     keys: set[str]
+    typing_types: dict[str, tuple[type, TypingType]]
     model: type[Struct] | None
-    with_bot: bool
-    bot_parameter_name: str
 
 
 class OneBotImpl:
@@ -89,13 +96,22 @@ class OneBotImpl:
         action: str,
         func: ActionHandler,
     ) -> ActionHandler:
-        types, with_bot, bot_parameter_name = analytic_typing(func)
+        types = analytic_typing(func)
+        keys = set()
+        types_dict = {}
+        struct_type = []
+        for name, type_, default, typing_type in types:
+            keys.add(name)
+            types_dict[name] = type_, typing_type
+            if default is inspect.Parameter.empty:
+                struct_type.append((name, type_))
+            else:
+                struct_type.append((name, type_, default))
         self.actions[action] = ActionHandlerWithValidate(
             func,
-            {type_[0] for type_ in types},
-            defstruct(f"{action}ValidateModel", types),
-            with_bot,
-            bot_parameter_name,
+            keys,
+            types_dict,
+            defstruct(f"{action}ValidateModel", struct_type),
         )
         return func
 
@@ -124,7 +140,7 @@ class OneBotImpl:
                 retcode=UNSUPPORTED_ACTION,
                 message="action is not supported",
             )
-        handler, types, model, with_bot, bot_parameter_name = action_handler
+        handler, keys, types, model = action_handler
         if len(self.bots) > 1 and not bot_self:
             return FailedActionResponse(
                 retcode=WHO_AM_I,
@@ -140,16 +156,25 @@ class OneBotImpl:
                 message=f"bot {bot_id} is not exist",
             )
         bot = self.bots.get(bot_id) or next(iter(self.bots.values()))
-        if with_bot:
-            params[bot_parameter_name] = bot
+
+        for name, type_detail in types.items():
+            type_, typing_type = type_detail
+            if typing_type is TypingType.BOT:
+                params[name] = bot
+            elif typing_type is TypingType.ANNOTATED:
+                param_real_name = cast(Annotated, type_).__metadata__[0]
+                params[name] = params.pop(param_real_name, None)
+
         try:
             msgspec.convert(params, model)
         except ValidationError as e:
             return FailedActionResponse(retcode=BAD_PARAM, message=str(e))
-        new_params = {
-            param: params[param] for param in params if param in types
-        }
-        data = await handler(**new_params)
+        if extra_params := set(params) - set(keys):
+            return FailedActionResponse(
+                retcode=UNSUPPORTED_PARAM,
+                message=f"Don't support params: {', '.join(extra_params)}",
+            )
+        data = await handler(**params)
         return ActionResponse(status="ok", retcode=OK, data=data, echo=echo)
 
     async def emit(self, event: Event) -> None:

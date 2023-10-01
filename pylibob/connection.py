@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from asyncio import Queue
-import json
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from pylibob.asgi import _asgi_app, lifespan_manager
@@ -13,7 +12,6 @@ from pylibob.status import BAD_REQUEST
 from pylibob.types import (
     ActionResponse,
     BotSelf,
-    ContentType,
     FailedActionResponse,
 )
 from pylibob.utils import (
@@ -22,11 +20,15 @@ from pylibob.utils import (
     background_task,
     detect_content_type,
 )
+from pylibob.version import __version__
 
+from aiohttp import ClientSession, ClientTimeout
 import msgspec
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.status import (
+    HTTP_200_OK,
+    HTTP_204_NO_CONTENT,
     HTTP_401_UNAUTHORIZED,
     HTTP_415_UNSUPPORTED_MEDIA_TYPE,
 )
@@ -58,24 +60,8 @@ class Connection:
 
     async def run_action(
         self,
-        content_type: ContentType,
-        raw: bytes,
+        data: dict[str, Any],
     ) -> ActionResponse:
-        if content_type == ContentType.MSGPACK:
-            # 暂不支持 MessagePack
-            return FailedActionResponse(
-                retcode=BAD_REQUEST,
-                message="OneBotImpl doesn't support MessagePack",
-            )
-
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            return FailedActionResponse(
-                retcode=BAD_REQUEST,
-                message="Invalid JSON",
-            )
-
         if not (action := data.get("action")):
             return FailedActionResponse(
                 retcode=BAD_REQUEST,
@@ -87,7 +73,7 @@ class Connection:
                 message="`params` is not exist.",
             )
         echo = data.get("echo")
-        bot_self: BotSelf = data.get("self")
+        bot_self: BotSelf | None = data.get("self")
         return await self.impl.handle_action(action, params, bot_self, echo)
 
     def init_connection(self) -> None:
@@ -132,15 +118,12 @@ class HTTP(ServerConnection):
             return Response(status_code=HTTP_401_UNAUTHORIZED)
         # 检查 Content-Type
         if not (
-            content_type := detect_content_type(
+            content_type := detect_content_type(  # noqa: F841
                 request.headers.get("Content-Type") or "",
             )
         ):
             return Response(status_code=HTTP_415_UNSUPPORTED_MEDIA_TYPE)
-        resp = await self.run_action(
-            content_type=content_type,
-            raw=await request.body(),
-        )
+        resp = await self.run_action(await request.json())
         return JSONResponse(msgspec.to_builtins(resp))
 
     async def action_get_latest_events(self, limit: int = 0, timeout: int = 0):
@@ -245,7 +228,7 @@ class WebSocket(ServerConnection):
             while True:
                 message = await ws.receive()
                 ws._raise_on_disconnect(message)  # noqa: SLF001
-                resp = await self.run_action(ContentType.JSON, message["text"])
+                resp = await self.run_action(message["text"])
                 await ws.send_json(msgspec.to_builtins(resp))
         except (WebSocketDisconnect, ConnectionClosed):
             self.ws.remove(ws)
@@ -256,3 +239,76 @@ class WebSocket(ServerConnection):
         )
         background_task.add(task)
         task.add_done_callback(background_task.remove)
+
+
+class ClientConnection(Connection):
+    def __init__(
+        self,
+        url: str,
+        *,
+        access_token: str | None = None,
+    ) -> None:
+        super().__init__(access_token=access_token)
+        self.url = url
+
+
+class HTTPWebhook(ClientConnection):
+    def __init__(
+        self,
+        url: str,
+        *,
+        access_token: str | None = None,
+        timeout: int = 5,
+    ) -> None:
+        super().__init__(url, access_token=access_token)
+        self.timeout = timeout
+
+    def _make_header(self) -> dict[str, str]:
+        header = {
+            "Content-Type": "application/json",
+            "User-Agent": (
+                f"OneBot/{self.impl.onebot_version} "
+                f"pylibob/{__version__} "
+                f"{self.impl.name}/{self.impl.version}"
+            ),
+            "X-OneBot-Version": self.impl.onebot_version,
+            "X-Impl": self.impl.name,
+        }
+        if self.access_token:
+            header["Authorization"] = f"Bearer {self.access_token}"
+        return header
+
+    async def emit_event(self, event: Event) -> None:
+        async with ClientSession(
+            timeout=self.timeout,
+            headers=self._make_header(),
+        ) as session:
+            ...
+            async with session.post(
+                self.url,
+                timeout=ClientTimeout(total=self.timeout),
+                json=event.dict(),
+            ) as resp:
+                if resp.status == HTTP_204_NO_CONTENT:
+                    # 如果响应状态码为 204 No Content，
+                    # 应认为事件推送成功，并不做更多处理。
+                    return
+                if resp.status != HTTP_200_OK:
+                    # 如果响应状态码不是 204 或 200 中的任一个，
+                    # 应认为事件推送失败。
+                    return
+
+                # 如果响应状态码为 200 OK，也应认为事件推送成功，
+                # 此时应该根据响应头中的 Content-Type
+                # 将响应体解析为动作请求列表，依次处理动作请求，丢弃动作响应。
+
+                if not (
+                    content_type := detect_content_type(  # noqa: F841
+                        resp.headers.get("Content-Type") or "",
+                    )
+                ):
+                    # TODO: 错误日志
+                    pass
+                data = await resp.json()
+                for action in data:
+                    await self.run_action(action)

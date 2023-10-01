@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict
 from enum import Enum, auto
 import inspect
@@ -79,3 +80,26 @@ def analytic_typing(
             type_ = (name, annotation, default, TypingType.NORMAL)
         types.append(type_)
     return types
+
+
+# https://code.luasoftware.com/tutorials/python/asyncio-graceful-shutdown/
+class TaskManager:
+    def __init__(self):
+        self.tasks = set()
+
+    async def sleep(self, delay, result=None):
+        await self.task(asyncio.sleep, None, delay)
+
+    async def task(self, func, result=None, *args, **kwargs):
+        task = asyncio.create_task(func(*args, **kwargs))
+        self.tasks.add(task)
+        try:
+            return await task
+        except asyncio.CancelledError:
+            return result
+        finally:
+            self.tasks.remove(task)
+
+    def cancel_all(self):
+        for _task in self.tasks:
+            _task.cancel()

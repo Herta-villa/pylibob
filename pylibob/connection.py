@@ -7,8 +7,8 @@ import time
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from pylibob.asgi import _asgi_app
-from pylibob.event import Event, MetaConnect
+from pylibob.asgi import _asgi_app, lifespan_manager
+from pylibob.event import Event, MetaConnect, MetaHeartbeat
 from pylibob.status import BAD_REQUEST
 from pylibob.types import (
     ActionResponse,
@@ -17,6 +17,7 @@ from pylibob.types import (
     FailedActionResponse,
 )
 from pylibob.utils import (
+    TaskManager,
     authorize,
     background_task,
     detect_content_type,
@@ -33,6 +34,7 @@ from starlette.websockets import (
     WebSocket as WS,
     WebSocketDisconnect,
 )
+from websockets.exceptions import ConnectionClosed
 
 if TYPE_CHECKING:
     from pylibob.impl import OneBotImpl
@@ -179,9 +181,29 @@ class WebSocket(ServerConnection):
         access_token: str | None = None,
         host: str = "0.0.0.0",
         port: int = 8080,
+        enable_heartbeat: bool = True,
+        heartbeat_interval: int = 5000,
     ) -> None:
         super().__init__(access_token=access_token, host=host, port=port)
         self.ws: list[WS] = []
+        self.enable_heartbeat = enable_heartbeat
+        if heartbeat_interval <= 0:
+            raise ValueError("The interval of heartbeat must be positive")
+        self.heartbeat_interval = heartbeat_interval
+        self._task_manager = TaskManager()
+        self._heartbeat_run = True
+
+    async def _heartbeat(self):
+        while self._heartbeat_run:
+            for ws in self.ws:
+                await ws.send_json(
+                    MetaHeartbeat(
+                        id=str(uuid4()),
+                        time=time.time(),
+                        interval=self.heartbeat_interval,
+                    ).dict(),
+                )
+            await self._task_manager.sleep(self.heartbeat_interval / 1000)
 
     def init_connection(self) -> None:
         _asgi_app.add_websocket_route(
@@ -189,6 +211,21 @@ class WebSocket(ServerConnection):
             self.handle_ws_request,
             f"{self.impl.name}-{self.impl.version}-ws",
         )
+
+        if not self.enable_heartbeat:
+            return
+
+        async def _start_heartbeat():
+            task = asyncio.create_task(self._heartbeat())
+            background_task.add(task)
+            task.add_done_callback(background_task.remove)
+
+        async def _stop_heartbeat():
+            self._heartbeat_run = False
+            self._task_manager.cancel_all()
+
+        lifespan_manager.on_startup(_start_heartbeat)
+        lifespan_manager.on_shutdown(_stop_heartbeat)
 
     async def handle_ws_request(self, ws: WS):
         if not authorize(self.access_token, ws):
@@ -210,7 +247,7 @@ class WebSocket(ServerConnection):
                 ws._raise_on_disconnect(message)  # noqa: SLF001
                 resp = await self.run_action(ContentType.JSON, message["text"])
                 await ws.send_json(msgspec.to_builtins(resp))
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, ConnectionClosed):
             self.ws.remove(ws)
 
     async def emit_event(self, event: Event) -> None:

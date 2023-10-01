@@ -23,12 +23,10 @@ class Event(msgspec.Struct, kw_only=True):
         raw = {
             k: v for k, v in msgspec.to_builtins(self).items() if v is not None
         }
+        platform = raw.pop('_platform')
         if extra := raw.pop("_extra", None):
             raw.update(
-                {
-                    f"{raw.pop('_platform', '')}.{k}": v
-                    for k, v in extra.items()
-                },
+                {f"{platform}.{k}": v for k, v in extra.items()},
             )
         if bot_self := raw.get("self"):
             raw["self"] = {
@@ -51,3 +49,11 @@ class MetaConnect(
 ):
     detail_type: Literal["connect"] = "connect"
     version: dict[str, str]
+
+
+class MetaHeartbeat(
+    MetaEvent,
+    kw_only=True,
+):
+    detail_type: Literal["heartbeat"] = "heartbeat"
+    interval: int

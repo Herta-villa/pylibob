@@ -8,9 +8,11 @@ from typing import Any, Callable, NamedTuple, cast
 from pylibob.connection import Connection, ServerConnection
 from pylibob.connection_ws import WebSocketReverse
 from pylibob.event import Event
+from pylibob.exception import OneBotImplError
 from pylibob.runner import ClientRunner, ServerRunner
 from pylibob.status import (
     BAD_PARAM,
+    INTERNAL_HANDLER_ERROR,
     OK,
     UNKNOWN_SELF,
     UNSUPPORTED_ACTION,
@@ -132,7 +134,7 @@ class OneBotImpl:
 
         return wrapper
 
-    async def handle_action(
+    async def handle_action(  # noqa: PLR0911
         self,
         action: str,
         params: dict[str, Any],
@@ -144,12 +146,14 @@ class OneBotImpl:
             return FailedActionResponse(
                 retcode=UNSUPPORTED_ACTION,
                 message="action is not supported",
+                echo=echo,
             )
         handler, keys, types, model = action_handler
         if len(self.bots) > 1 and not bot_self:
             return FailedActionResponse(
                 retcode=WHO_AM_I,
                 message="bot is not detect",
+                echo=echo,
             )
 
         bot_id = (
@@ -159,6 +163,7 @@ class OneBotImpl:
             return FailedActionResponse(
                 retcode=UNKNOWN_SELF,
                 message=f"bot {bot_id} is not exist",
+                echo=echo,
             )
         bot = self.bots.get(bot_id) or next(iter(self.bots.values()))
 
@@ -179,7 +184,20 @@ class OneBotImpl:
                 retcode=UNSUPPORTED_PARAM,
                 message=f"Don't support params: {', '.join(extra_params)}",
             )
-        data = await handler(**params)
+        try:
+            data = await handler(**params)
+        except OneBotImplError as e:
+            return FailedActionResponse(
+                retcode=e.retcode,
+                message=e.message,
+                data=e.data,
+                echo=echo,
+            )
+        except Exception:
+            return FailedActionResponse(
+                retcode=INTERNAL_HANDLER_ERROR,
+                echo=echo,
+            )
         return ActionResponse(status="ok", retcode=OK, data=data, echo=echo)
 
     async def emit(self, event: Event) -> None:

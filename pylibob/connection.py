@@ -3,18 +3,11 @@ from __future__ import annotations
 from asyncio import Queue
 from typing import TYPE_CHECKING, Any
 
-from pylibob.asgi import _asgi_app
+from pylibob.asgi import asgi_app
 from pylibob.event import Event
 from pylibob.status import BAD_REQUEST
-from pylibob.types import (
-    ActionResponse,
-    BotSelf,
-    FailedActionResponse,
-)
-from pylibob.utils import (
-    authorize,
-    detect_content_type,
-)
+from pylibob.types import ActionResponse, BotSelf, FailedActionResponse
+from pylibob.utils import authorize, detect_content_type
 from pylibob.version import __version__
 
 from aiohttp import ClientSession, ClientTimeout
@@ -127,7 +120,7 @@ class HTTP(ServerConnection):
         return events
 
     def init_connection(self) -> None:
-        _asgi_app.add_route(
+        asgi_app.add_route(
             "/",
             self.receive_http_request,
             ["POST"],

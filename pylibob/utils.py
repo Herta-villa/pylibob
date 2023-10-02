@@ -5,7 +5,7 @@ from dataclasses import asdict
 from enum import Enum, auto
 import inspect
 import sys
-from typing import Any, get_origin
+from typing import Any, Awaitable, Callable, get_origin
 
 from pylibob.types import ActionHandler, Bot, ContentType
 
@@ -87,9 +87,6 @@ class TaskManager:
     def __init__(self):
         self.tasks = set()
 
-    async def sleep(self, delay, result=None):
-        await self.task(asyncio.sleep, None, delay)
-
     async def task(self, func, result=None, *args, **kwargs):
         task = asyncio.create_task(func(*args, **kwargs))
         self.tasks.add(task)
@@ -100,6 +97,39 @@ class TaskManager:
         finally:
             self.tasks.remove(task)
 
+    def task_nowait(self, func, *args, **kwargs):
+        task = asyncio.create_task(func(*args, **kwargs))
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.remove)
+
     def cancel_all(self):
         for _task in self.tasks:
-            _task.cancel()
+            if not _task.done():
+                _task.cancel()
+
+
+L_FUNC = Callable[[], Awaitable[Any]]
+
+
+class LifespanManager:
+    def __init__(self) -> None:
+        self._startup_funcs: list[L_FUNC] = []
+        self._shutdown_funcs: list[L_FUNC] = []
+
+    def on_startup(self, func: L_FUNC) -> L_FUNC:
+        self._startup_funcs.append(func)
+        return func
+
+    def on_shutdown(self, func: L_FUNC) -> L_FUNC:
+        self._shutdown_funcs.append(func)
+        return func
+
+    async def startup(self) -> None:
+        if self._startup_funcs:
+            for func in self._startup_funcs:
+                await func()
+
+    async def shutdown(self) -> None:
+        if self._shutdown_funcs:
+            for func in self._shutdown_funcs:
+                await func()

@@ -3,19 +3,14 @@ from __future__ import annotations
 import abc
 import asyncio
 import json
-import signal
 import time
 from typing import Any
 from uuid import uuid4
 
-from pylibob.asgi import _asgi_app, lifespan_manager
+from pylibob.asgi import asgi_app, asgi_lifespan_manager
 from pylibob.connection import ClientConnection, Connection, ServerConnection
 from pylibob.event import Event, MetaConnect, MetaHeartbeat
-from pylibob.utils import (
-    TaskManager,
-    authorize,
-    background_task,
-)
+from pylibob.utils import TaskManager, authorize, background_task
 
 from aiohttp import (
     ClientError,
@@ -24,9 +19,7 @@ from aiohttp import (
     WSMsgType,
 )
 import msgspec
-from starlette.status import (
-    HTTP_401_UNAUTHORIZED,
-)
+from starlette.status import HTTP_401_UNAUTHORIZED
 from starlette.websockets import (
     WebSocket as WS,
     WebSocketDisconnect,
@@ -102,7 +95,7 @@ class WebSocketConnection(Connection):
         if heartbeat_interval <= 0:
             raise ValueError("The interval of heartbeat must be positive")
         self.heartbeat_interval = heartbeat_interval
-        self._task_manager = TaskManager()
+        self.task_manager = TaskManager()
         self.ws: list[WSProtocol] = []
         self._heartbeat_run = True
 
@@ -116,7 +109,7 @@ class WebSocketConnection(Connection):
                         interval=self.heartbeat_interval,
                     ).dict(),
                 )
-            await self._task_manager.sleep(self.heartbeat_interval / 1000)
+            await asyncio.sleep(self.heartbeat_interval / 1000)
 
     async def _start_heartbeat(self):
         task = asyncio.create_task(self._heartbeat())
@@ -125,11 +118,11 @@ class WebSocketConnection(Connection):
 
     async def _stop_heartbeat(self):
         self._heartbeat_run = False
-        self._task_manager.cancel_all()
+        self.task_manager.cancel_all()
 
     def _enable_heartbeat(self):
-        lifespan_manager.on_startup(self._start_heartbeat)
-        lifespan_manager.on_shutdown(self._stop_heartbeat)
+        asgi_lifespan_manager.on_startup(self._start_heartbeat)
+        asgi_lifespan_manager.on_shutdown(self._stop_heartbeat)
 
     async def _listen_ws(self, ws: WSProtocol):
         while True:
@@ -163,7 +156,7 @@ class WebSocket(WebSocketConnection, ServerConnection):
         super(WebSocketConnection, self).__init__(host=host, port=port)
 
     def init_connection(self) -> None:
-        _asgi_app.add_websocket_route(
+        asgi_app.add_websocket_route(
             "/",
             self.handle_ws_request,
             f"{self.impl.name}-{self.impl.version}-ws",
@@ -218,11 +211,10 @@ class WebSocketReverse(
         if reconnect_interval <= 0:
             raise ValueError("The interval of reconnection must be positive")
         self.reconnect_interval = reconnect_interval
-        self._running = True
 
     async def connect_to_remote(self):
         async with ClientSession() as session:
-            while self._running:
+            while True:
                 try:
                     async with session.ws_connect(
                         self.url,
@@ -243,27 +235,13 @@ class WebSocketReverse(
 
                         ws_protocol = ClientWSProtocol(resp)
                         self.ws.append(ws_protocol)
-                        await self._task_manager.task(
-                            self._listen_ws,
+                        await self._listen_ws(
                             ws=ws_protocol,
                         )
-                except (ClientError, ConnectClosed):
-                    await self._task_manager.sleep(
+                except (ClientError, ConnectClosed, ConnectionError):
+                    await asyncio.sleep(
                         self.reconnect_interval / 1000,
                     )
 
     async def run(self):
-        task = asyncio.create_task(self.connect_to_remote())
-        await asyncio.gather(task)
-
-    def shutdown(self, sig, frame):
-        self._running = False
-        self._task_manager.cancel_all()
-
-    def init_connection(self) -> None:
-        signs = {
-            signal.SIGINT,  # Unix kill -2(CTRL + C)
-            signal.SIGTERM,  # Unix kill -15
-        }
-        for sign in signs:
-            signal.signal(sign, self.shutdown)
+        self.task_manager.task_nowait(self.connect_to_remote)

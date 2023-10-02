@@ -5,9 +5,10 @@ import inspect
 import sys
 from typing import Any, Callable, NamedTuple, cast
 
-from pylibob.asgi import _asgi_app
 from pylibob.connection import Connection, ServerConnection
+from pylibob.connection_ws import WebSocketReverse
 from pylibob.event import Event
+from pylibob.runner import ClientRunner, ServerRunner
 from pylibob.status import (
     BAD_PARAM,
     OK,
@@ -23,11 +24,15 @@ from pylibob.types import (
     BotSelf,
     FailedActionResponse,
 )
-from pylibob.utils import TypingType, analytic_typing, background_task
+from pylibob.utils import (
+    TaskManager,
+    TypingType,
+    analytic_typing,
+    background_task,
+)
 
 import msgspec
 from msgspec import Struct, ValidationError, defstruct
-import uvicorn
 
 if sys.version_info >= (3, 9):
     from typing import Annotated
@@ -217,7 +222,37 @@ class OneBotImpl:
             None,
         )
 
+    def _get_ws_reverse(self) -> WebSocketReverse | None:
+        return next(
+            (
+                conn
+                for conn in self.conns
+                if isinstance(conn, WebSocketReverse)
+            ),
+            None,
+        )
+
     def run(self):
         host = self._get_host()
+        ws_reverse = self._get_ws_reverse()
+
         if host is not None:
-            uvicorn.run(_asgi_app, host=host[0], port=host[1])
+            runner = ServerRunner(*host)
+            if ws_reverse:
+
+                async def _stop():
+                    ws_reverse.task_manager.cancel_all()
+
+                runner.on_startup(ws_reverse.run)
+                runner.on_shutdown(_stop)
+        elif ws_reverse:
+            runner = ClientRunner(ws_reverse.task_manager)
+            runner.on_startup(ws_reverse.run)
+        else:
+            runner = ClientRunner(TaskManager())
+
+        if ws_reverse:
+            runner.on_startup(ws_reverse._start_heartbeat)  # noqa: SLF001
+            runner.on_shutdown(ws_reverse._stop_heartbeat)  # noqa: SLF001
+
+        asyncio.run(runner.run())

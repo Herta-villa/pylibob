@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 from asyncio import Queue
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 
 from pylibob.asgi import asgi_app
 from pylibob.event import Event
 from pylibob.status import BAD_REQUEST
-from pylibob.types import ActionResponse, BotSelf, FailedActionResponse
+from pylibob.types import (
+    ActionResponse,
+    BotSelf,
+    ContentType,
+    FailedActionResponse,
+)
 from pylibob.utils import authorize, detect_content_type
 from pylibob.version import __version__
 
 from aiohttp import ClientSession, ClientTimeout
+import msgpack
 import msgspec
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -107,7 +114,7 @@ class HTTP(ServerConnection):
             return Response(status_code=HTTP_401_UNAUTHORIZED)
         # 检查 Content-Type
         if not (
-            content_type := detect_content_type(  # noqa: F841
+            content_type := detect_content_type(
                 request.headers.get("Content-Type") or "",
             )
         ):
@@ -116,8 +123,45 @@ class HTTP(ServerConnection):
                 "或 application/msgpack",
             )
             return Response(status_code=HTTP_415_UNSUPPORTED_MEDIA_TYPE)
-        resp = await self.run_action(await request.json())
-        return JSONResponse(msgspec.to_builtins(resp))
+
+        body = await request.body()
+        if content_type == ContentType.JSON:
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                return JSONResponse(
+                    msgspec.to_builtins(
+                        FailedActionResponse(
+                            retcode=BAD_REQUEST,
+                            message="Invalid JSON",
+                        ),
+                    ),
+                )
+        else:
+            try:
+                data = msgpack.unpackb(body)
+            except msgpack.UnpackException:
+                return Response(
+                    msgspec.msgpack.encode(
+                        FailedActionResponse(
+                            retcode=BAD_REQUEST,
+                            message="Invalid MessagePack",
+                        ),
+                    ),
+                )
+        self.logger.info(
+            f"[RECEIVE({content_type.name}) <= {request.url}] {data}",
+        )
+        resp = await self.run_action(data)
+        convert_func = (
+            msgspec.json.encode
+            if content_type == ContentType.JSON
+            else msgspec.msgpack.encode
+        )
+        return Response(
+            convert_func(resp),
+            headers={"Content-Type": content_type.value},
+        )
 
     async def action_get_latest_events(self, limit: int = 0, timeout: int = 0):
         # TODO: long polling
@@ -198,10 +242,12 @@ class HTTPWebhook(ClientConnection):
             timeout=self.timeout,
             headers=self._make_header(),
         ) as session:
+            event_json = event.dict()
+            self.logger.debug(f"[SEND => {self.url}] {event_json}")
             async with session.post(
                 self.url,
                 timeout=ClientTimeout(total=self.timeout),
-                json=event.dict(),
+                json=event_json,
             ) as resp:
                 if resp.status == HTTP_204_NO_CONTENT:
                     # 如果响应状态码为 204 No Content，
@@ -219,7 +265,7 @@ class HTTPWebhook(ClientConnection):
                 # 此时应该根据响应头中的 Content-Type
                 # 将响应体解析为动作请求列表，依次处理动作请求，丢弃动作响应。
                 if not (
-                    content_type := detect_content_type(  # noqa: F841
+                    content_type := detect_content_type(
                         resp.headers.get("Content-Type") or "",
                     )
                 ):
@@ -227,6 +273,18 @@ class HTTPWebhook(ClientConnection):
                         "Content-Type 不为 application/json "
                         "或 application/msgpack",
                     )
-                data = await resp.json()
+
+                body = await resp.read()
+                if content_type == ContentType.JSON:
+                    try:
+                        data = json.loads(body)
+                    except json.JSONDecodeError:
+                        return
+                else:
+                    try:
+                        data = msgpack.unpackb(body)
+                    except msgpack.UnpackException:
+                        return
+                self.logger.debug(f"[RECEIVE <= {self.url}] {data}")
                 for action in data:
                     await self.run_action(action)

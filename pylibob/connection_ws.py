@@ -11,6 +11,7 @@ from uuid import uuid4
 from pylibob.asgi import asgi_app, asgi_lifespan_manager
 from pylibob.connection import ClientConnection, Connection, ServerConnection
 from pylibob.event import Event, MetaConnect, MetaHeartbeat
+from pylibob.types import ContentType
 from pylibob.utils import TaskManager, authorize, background_task
 
 from aiohttp import (
@@ -19,6 +20,7 @@ from aiohttp import (
     ClientWebSocketResponse,
     WSMsgType,
 )
+import msgpack
 import msgspec
 from starlette.status import HTTP_401_UNAUTHORIZED
 from starlette.websockets import (
@@ -44,7 +46,7 @@ class WSProtocol(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def receive(self) -> Any:
+    async def receive(self) -> tuple[ContentType, Any]:
         raise NotImplementedError
 
 
@@ -58,13 +60,21 @@ class ServerWSProtocol(WSProtocol):
 
     async def send_msgpack(self, data: Any):
         logger.debug(f"[SEND_MSGPACK => {self.ws.url}] {data}")
-        ...
+        await self.ws.send_bytes(msgpack.packb(data))  # type: ignore
 
-    async def receive(self) -> Any:
+    async def receive(self) -> tuple[ContentType, Any]:
         message = await self.ws.receive()
-        logger.debug(f"[RECEIVE <= {self.ws.url}] {message}")
         self.ws._raise_on_disconnect(message)  # noqa: SLF001
-        return json.loads(message["text"])
+        if "text" in message:
+            # JSON
+            data = json.loads(message["text"])
+            content_type = ContentType.JSON
+        else:
+            # MessagePack
+            data = msgpack.unpackb(message["bytes"])
+            content_type = ContentType.MSGPACK
+        logger.debug(f"[RECEIVE({content_type.name}) <= {self.ws.url}] {data}")
+        return content_type, data
 
 
 class ClientWSProtocol(WSProtocol):
@@ -79,9 +89,10 @@ class ClientWSProtocol(WSProtocol):
 
     async def send_msgpack(self, data: Any):
         logger.debug(
-            f"[SEND_JSON => {self.ws._response.url}] {data}",  # noqa: SLF001
+            "[SEND_MSGPACK => "
+            f"{self.ws._response.url}] {data}",  # noqa: SLF001
         )
-        ...
+        await self.ws.send_bytes(msgpack.packb(data))  # type: ignore
 
     async def receive(self) -> Any:
         message = await self.ws.receive()
@@ -91,11 +102,19 @@ class ClientWSProtocol(WSProtocol):
             WSMsgType.CLOSED,
         }:
             raise ConnectClosed
+        if message.type == WSMsgType.TEXT:
+            # JSON
+            data = json.loads(message.data)
+            content_type = ContentType.JSON
+        else:
+            # MessagePack
+            data = msgpack.unpackb(message.data)
+            content_type = ContentType.MSGPACK
         logger.debug(
-            "[RECEIVE <= "
-            f"{self.ws._response.url}] {message.data}",  # noqa: SLF001
+            f"[RECEIVE({content_type.name}) <= "
+            f"{self.ws._response.url}] {data}",  # noqa: SLF001
         )
-        return json.loads(message.data)
+        return content_type, data
 
 
 class WebSocketConnection(Connection):
@@ -140,16 +159,20 @@ class WebSocketConnection(Connection):
 
     async def _listen_ws(self, ws: WSProtocol):
         while True:
-            message = await ws.receive()
+            content_type, message = await ws.receive()
             resp = await self.run_action(message)
-            await ws.send_json(msgspec.to_builtins(resp))
+            send_func = (
+                ws.send_json
+                if content_type == ContentType.JSON
+                else ws.send_msgpack
+            )
+            await send_func(msgspec.to_builtins(resp))
 
     async def emit_event(self, event: Event) -> None:
-        task = asyncio.create_task(
-            *[ws.send_json(event.dict()) for ws in self.ws],
-        )
-        background_task.add(task)
-        task.add_done_callback(background_task.remove)
+        for ws in self.ws:
+            task = asyncio.create_task(ws.send_json(event.dict()))
+            background_task.add(task)
+            task.add_done_callback(background_task.remove)
 
 
 class WebSocket(WebSocketConnection, ServerConnection):
@@ -267,6 +290,9 @@ class WebSocketReverse(
                             ws=ws_protocol,
                         )
                 except (ClientError, ConnectClosed, ConnectionError) as e:
+                    if ws_protocol:
+                        self.ws.remove(ws_protocol)
+                        ws_protocol = None
                     self.logger.warning(
                         f"连接到反向 WS 服务器 {self.url} 失败: {e}, "
                         f"将在 {self.reconnect_interval} 毫秒后重连",

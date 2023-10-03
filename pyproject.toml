@@ -9,6 +9,7 @@ dependencies = [
     "msgspec>=0.18.2",
     'typing_extensions>=4.8.0,<5 ; python_version<="3.8"',
     "aiohttp>=3.8.5",
+    "msgpack>=1.0.7",
 ]
 requires-python = ">=3.8"
 readme = "README.md"

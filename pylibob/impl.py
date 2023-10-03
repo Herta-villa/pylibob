@@ -203,6 +203,7 @@ class OneBotImpl:
                 message=f"Don't support params: {', '.join(extra_params)}",
             )
         try:
+            logger.info(f"执行动作 {action}")
             data = await handler(**params)
         except OneBotImplError as e:
             return FailedActionResponse(
@@ -227,11 +228,10 @@ class OneBotImpl:
         if conns is None:
             conns = self.conns
         logger.debug(f"推送事件: {event}")
-        task = asyncio.create_task(
-            *[conn.emit_event(event) for conn in conns],
-        )
-        background_task.add(task)
-        task.add_done_callback(background_task.remove)
+        for conn in conns:
+            task = asyncio.create_task(conn.emit_event(event))
+            background_task.add(task)
+            task.add_done_callback(background_task.remove)
 
     async def action_get_version(self):
         """[元动作]获取版本信息

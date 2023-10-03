@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pylibob.types import Bot
+from pylibob.types import Bot, Status
 
 import msgspec
 
@@ -57,3 +57,11 @@ class MetaHeartbeat(
 ):
     detail_type: Literal["heartbeat"] = "heartbeat"
     interval: int
+
+
+class MetaStatusUpdate(
+    MetaEvent,
+    kw_only=True,
+):
+    detail_type: Literal["status_update"] = "status_update"
+    status: Status

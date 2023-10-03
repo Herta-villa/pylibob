@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import inspect
 import sys
+import time
 from typing import Any, Callable, NamedTuple, cast
+from uuid import uuid4
 
-from pylibob.connection import Connection, ServerConnection
-from pylibob.connection_ws import WebSocketReverse
-from pylibob.event import Event
+from pylibob.connection import Connection, HTTPWebhook, ServerConnection
+from pylibob.connection_ws import WebSocketConnection, WebSocketReverse
+from pylibob.event import Event, MetaStatusUpdate
 from pylibob.exception import OneBotImplError
 from pylibob.runner import ClientRunner, ServerRunner
 from pylibob.status import (
@@ -25,6 +27,7 @@ from pylibob.types import (
     Bot,
     BotSelf,
     FailedActionResponse,
+    Status,
 )
 from pylibob.utils import (
     TaskManager,
@@ -89,6 +92,13 @@ class OneBotImpl:
             "get_supported_actions",
             self.action_get_supported_actions,
         )
+
+    @property
+    def status(self) -> Status:
+        return {
+            "good": self.is_good,
+            "bots": [bot.to_dict() for bot in self.bots.values()],
+        }
 
     @property
     def impl_ver(self) -> dict[str, str]:
@@ -200,9 +210,15 @@ class OneBotImpl:
             )
         return ActionResponse(status="ok", retcode=OK, data=data, echo=echo)
 
-    async def emit(self, event: Event) -> None:
+    async def emit(
+        self,
+        event: Event,
+        conns: list[Connection] | None = None,
+    ) -> None:
+        if conns is None:
+            conns = self.conns
         task = asyncio.create_task(
-            *[conn.emit_event(event) for conn in self.conns],
+            *[conn.emit_event(event) for conn in conns],
         )
         background_task.add(task)
         task.add_done_callback(background_task.remove)
@@ -225,10 +241,7 @@ class OneBotImpl:
         """[元动作]获取运行状态
         https://12.onebot.dev/interface/meta/actions/#get_status
         """
-        return {
-            "good": self.is_good,
-            "bots": [bot.to_dict() for bot in self.bots.values()],
-        }
+        return self.status
 
     def _get_host(self) -> tuple[str, int] | None:
         return next(
@@ -274,3 +287,17 @@ class OneBotImpl:
             runner.on_shutdown(ws_reverse._stop_heartbeat)  # noqa: SLF001
 
         asyncio.run(runner.run())
+
+    async def update_status(self) -> None:
+        await self.emit(
+            MetaStatusUpdate(
+                id=str(uuid4()),
+                time=time.time(),
+                status=self.status,
+            ),
+            conns=[
+                conn
+                for conn in self.conns
+                if isinstance(conn, (WebSocketConnection, HTTPWebhook))
+            ],
+        )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import sys
 import time
 from typing import Any, Callable, NamedTuple, cast
@@ -43,6 +44,8 @@ if sys.version_info >= (3, 9):
     from typing import Annotated
 else:
     from typing_extensions import Annotated
+
+logger = logging.getLogger("pylibob.impl")
 
 
 class ActionHandlerWithValidate(NamedTuple):
@@ -130,6 +133,8 @@ class OneBotImpl:
             types_dict,
             defstruct(f"{action}ValidateModel", struct_type),
         )
+        logger.info(f"已注册动作: {action}")
+        logger.debug(f"动作 {action} 类型: {types}")
         return func
 
     def action(
@@ -170,6 +175,7 @@ class OneBotImpl:
             f"{bot_self['platform']}.{bot_self['user_id']}" if bot_self else ""
         )
         if bot_id and bot_id not in self.bots:
+            logger.warning(f"未找到 Bot: {bot_id}")
             return FailedActionResponse(
                 retcode=UNKNOWN_SELF,
                 message=f"bot {bot_id} is not exist",
@@ -188,8 +194,10 @@ class OneBotImpl:
         try:
             msgspec.convert(params, model)
         except ValidationError as e:
+            logger.warning(f"请求模型校验失败: {e}")
             return FailedActionResponse(retcode=BAD_PARAM, message=str(e))
         if extra_params := set(params) - set(keys):
+            logger.warning(f"不支持的动作参数: {', '.join(extra_params)}")
             return FailedActionResponse(
                 retcode=UNSUPPORTED_PARAM,
                 message=f"Don't support params: {', '.join(extra_params)}",
@@ -204,6 +212,7 @@ class OneBotImpl:
                 echo=echo,
             )
         except Exception:
+            logger.exception(f"执行 {action} 动作时出错:")
             return FailedActionResponse(
                 retcode=INTERNAL_HANDLER_ERROR,
                 echo=echo,
@@ -217,6 +226,7 @@ class OneBotImpl:
     ) -> None:
         if conns is None:
             conns = self.conns
+        logger.debug(f"推送事件: {event}")
         task = asyncio.create_task(
             *[conn.emit_event(event) for conn in conns],
         )
@@ -268,8 +278,10 @@ class OneBotImpl:
         ws_reverse = self._get_ws_reverse()
 
         if host is not None:
+            logger.debug("Runner 选中: ServerRunner")
             runner = ServerRunner(*host)
             if ws_reverse:
+                logger.debug("向 ServerRunner 添加反向 WS 服务")
 
                 async def _stop():
                     ws_reverse.task_manager.cancel_all()
@@ -277,12 +289,15 @@ class OneBotImpl:
                 runner.on_startup(ws_reverse.run)
                 runner.on_shutdown(_stop)
         elif ws_reverse:
+            logger.debug("Runner 选中: ClientRunner (反向 WS)")
             runner = ClientRunner(ws_reverse.task_manager)
             runner.on_startup(ws_reverse.run)
         else:
+            logger.debug("Runner 选中: ClientRunner")
             runner = ClientRunner(TaskManager())
 
-        if ws_reverse:
+        if ws_reverse and ws_reverse.enable_heartbeat:
+            logger.debug("向 Runner 中添加反向 WS 心跳任务")
             runner.on_startup(ws_reverse._start_heartbeat)  # noqa: SLF001
             runner.on_shutdown(ws_reverse._stop_heartbeat)  # noqa: SLF001
 

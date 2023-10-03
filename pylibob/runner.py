@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import logging
 import signal
 from typing import Any
 
@@ -14,6 +15,8 @@ HANDLED_SIGNALS = {
     signal.SIGINT,  # Unix kill -2(CTRL + C)
     signal.SIGTERM,  # Unix kill -15
 }
+
+logger = logging.getLogger("pylibob.runner")
 
 
 class Runner(abc.ABC):
@@ -41,6 +44,7 @@ class ServerRunner(Runner):
         self.uvicorn_params = kwargs
 
     async def run(self):
+        logger.info("启动 ServerRunner")
         await uvicorn.Server(
             uvicorn.Config(
                 asgi_app,
@@ -90,7 +94,9 @@ class ClientRunner(Runner):
 
     async def run(self):
         for sig in HANDLED_SIGNALS:
+            logger.debug(f"注册信号 {sig} 捕获器")
             signal.signal(sig, self._handle_exit)
+        logger.info("启动 ClientRunner")
         await self.lifespan_manager.startup()
         await self._loop()
         await self._shutdown()

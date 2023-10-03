@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import asdict
 from enum import Enum, auto
 import inspect
+import logging
 import sys
 from typing import Any, Awaitable, Callable, get_origin
 
@@ -82,12 +83,17 @@ def analytic_typing(
     return types
 
 
+task_logger = logging.getLogger("pylibob.utils.task_manager")
+lifespan_logger = logging.getLogger("pylibob.utils.lifespan_manager")
+
+
 # https://code.luasoftware.com/tutorials/python/asyncio-graceful-shutdown/
 class TaskManager:
     def __init__(self):
         self.tasks = set()
 
     async def task(self, func, result=None, *args, **kwargs):
+        task_logger.debug(f"添加任务: {func}({args}, {kwargs})")
         task = asyncio.create_task(func(*args, **kwargs))
         self.tasks.add(task)
         try:
@@ -98,6 +104,7 @@ class TaskManager:
             self.tasks.remove(task)
 
     def task_nowait(self, func, *args, **kwargs):
+        task_logger.debug(f"添加任务(nowait): {func}({args}, {kwargs})")
         task = asyncio.create_task(func(*args, **kwargs))
         self.tasks.add(task)
         task.add_done_callback(self.tasks.remove)
@@ -117,19 +124,23 @@ class LifespanManager:
         self._shutdown_funcs: list[L_FUNC] = []
 
     def on_startup(self, func: L_FUNC) -> L_FUNC:
+        lifespan_logger.debug(f"添加 startup 生命周期函数: {func}")
         self._startup_funcs.append(func)
         return func
 
     def on_shutdown(self, func: L_FUNC) -> L_FUNC:
+        lifespan_logger.debug(f"添加 shutdown 生命周期函数: {func}")
         self._shutdown_funcs.append(func)
         return func
 
     async def startup(self) -> None:
         if self._startup_funcs:
             for func in self._startup_funcs:
+                lifespan_logger.debug(f"执行 startup 生命周期函数: {func}")
                 await func()
 
     async def shutdown(self) -> None:
         if self._shutdown_funcs:
             for func in self._shutdown_funcs:
+                lifespan_logger.debug(f"执行 shutdown 生命周期函数: {func}")
                 await func()

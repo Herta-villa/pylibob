@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from asyncio import Queue
+import logging
 from typing import TYPE_CHECKING, Any
 
 from pylibob.asgi import asgi_app
@@ -23,6 +24,8 @@ from starlette.status import (
 
 if TYPE_CHECKING:
     from pylibob.impl import OneBotImpl
+
+logger = logging.getLogger("pylibob.connection")
 
 
 class Connection:
@@ -89,6 +92,8 @@ class HTTP(ServerConnection):
         event_enabled: bool = True,
         event_buffer_size: int = 20,
     ) -> None:
+        self.logger = logging.getLogger("pylibob.connection.http")
+
         super().__init__(access_token=access_token, host=host, port=port)
         self.event_queue: Queue[Event] | None = (
             Queue(maxsize=event_buffer_size) if event_enabled else None
@@ -98,6 +103,7 @@ class HTTP(ServerConnection):
         # 鉴权
         if not authorize(self.access_token, request):
             # 如果鉴权失败，必须返回 HTTP 状态码 401 Unauthorized
+            self.logger.warning(f"{request.url} 鉴权失败")
             return Response(status_code=HTTP_401_UNAUTHORIZED)
         # 检查 Content-Type
         if not (
@@ -105,6 +111,10 @@ class HTTP(ServerConnection):
                 request.headers.get("Content-Type") or "",
             )
         ):
+            self.logger.warning(
+                f"{request.url} Content-Type 不为 application/json "
+                "或 application/msgpack",
+            )
             return Response(status_code=HTTP_415_UNSUPPORTED_MEDIA_TYPE)
         resp = await self.run_action(await request.json())
         return JSONResponse(msgspec.to_builtins(resp))
@@ -128,6 +138,7 @@ class HTTP(ServerConnection):
             False,
         )
         if self.event_queue:
+            self.logger.info("启用元动作 get_latest_events")
             self.impl.register_action_handler(
                 "get_latest_events",
                 self.action_get_latest_events,
@@ -169,6 +180,7 @@ class HTTPWebhook(ClientConnection):
     ) -> None:
         super().__init__(url, access_token=access_token)
         self.timeout = timeout
+        self.logger = logging.getLogger("pylibob.connection.http_webhook")
 
     def _make_header(self) -> dict[str, str]:
         header = {
@@ -186,7 +198,6 @@ class HTTPWebhook(ClientConnection):
             timeout=self.timeout,
             headers=self._make_header(),
         ) as session:
-            ...
             async with session.post(
                 self.url,
                 timeout=ClientTimeout(total=self.timeout),
@@ -199,19 +210,23 @@ class HTTPWebhook(ClientConnection):
                 if resp.status != HTTP_200_OK:
                     # 如果响应状态码不是 204 或 200 中的任一个，
                     # 应认为事件推送失败。
+                    self.logger.warning(
+                        f"事件推送失败: {resp.status} {resp.reason}",
+                    )
                     return
 
                 # 如果响应状态码为 200 OK，也应认为事件推送成功，
                 # 此时应该根据响应头中的 Content-Type
                 # 将响应体解析为动作请求列表，依次处理动作请求，丢弃动作响应。
-
                 if not (
                     content_type := detect_content_type(  # noqa: F841
                         resp.headers.get("Content-Type") or "",
                     )
                 ):
-                    # TODO: 错误日志
-                    pass
+                    self.logger.warning(
+                        "Content-Type 不为 application/json "
+                        "或 application/msgpack",
+                    )
                 data = await resp.json()
                 for action in data:
                     await self.run_action(action)

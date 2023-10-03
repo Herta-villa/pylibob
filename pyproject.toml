@@ -4,12 +4,12 @@ name = "pylibob"
 description = "非官方 LibOneBot Python 库，旨在帮助开发者实现 OneBot 12 标准。"
 authors = [{ name = "MingxuanGame", email = "MingxuanGame@outlook.com" }]
 dependencies = [
-    "starlette>=0.31.1",
-    "uvicorn[standard]>=0.23.2",
+    "starlette>=0.27.0",
+    "uvicorn[standard]>=0.23.2,<1",
     "msgspec>=0.18.2",
     'typing_extensions>=4.8.0,<5 ; python_version<="3.8"',
-    "aiohttp>=3.8.5",
-    "msgpack>=1.0.7",
+    "aiohttp[speedups]>=3.8.0,<4",
+    "msgpack>=1.0.7,<2",
 ]
 requires-python = ">=3.8"
 readme = "README.md"

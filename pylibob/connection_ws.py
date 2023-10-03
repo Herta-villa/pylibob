@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from pylibob.asgi import asgi_app, asgi_lifespan_manager
 from pylibob.connection import ClientConnection, Connection, ServerConnection
-from pylibob.event import Event, MetaConnect, MetaHeartbeat
+from pylibob.event import Event, MetaConnectEvent, MetaHeartbeatEvent
 from pylibob.types import ContentType
 from pylibob.utils import TaskManager, authorize, background_task
 
@@ -138,7 +138,7 @@ class WebSocketConnection(Connection):
         while self._heartbeat_run:
             for ws in self.ws:
                 await ws.send_json(
-                    MetaHeartbeat(
+                    MetaHeartbeatEvent(
                         id=str(uuid4()),
                         time=time.time(),
                         interval=self.heartbeat_interval,
@@ -216,7 +216,7 @@ class WebSocket(WebSocketConnection, ServerConnection):
         self.logger.info(f"接受连接: {ws.url}")
         ws_protocol = ServerWSProtocol(ws)
         await ws_protocol.send_json(
-            MetaConnect(
+            MetaConnectEvent(
                 id=str(uuid4()),
                 time=time.time(),
                 version=self.impl.impl_ver,
@@ -277,7 +277,7 @@ class WebSocketReverse(
                         ws_protocol = ClientWSProtocol(resp)
                         self.ws.append(ws_protocol)
                         await ws_protocol.send_json(
-                            MetaConnect(
+                            MetaConnectEvent(
                                 id=str(uuid4()),
                                 time=time.time(),
                                 version=self.impl.impl_ver,

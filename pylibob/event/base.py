@@ -1,24 +1,23 @@
-# ruff: noqa: A003
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from pylibob.types import Bot, Status
+from pylibob.types import Bot
 
 import msgspec
 
 
 class Event(msgspec.Struct, kw_only=True):
-    id: str
+    id: str  # noqa: A003
     time: float
-    type: Literal["meta", "message", "notice", "request"]
+    type: Literal["meta", "message", "notice", "request"]  # noqa: A003
     detail_type: str
     sub_type: str = ""
     self: Bot | None = None
     _extra: dict[str, Any] | None = None
     _platform: str = ""
 
-    def dict(self) -> dict[str, Any]:
+    def dict(self) -> dict[str, Any]:  # noqa: A003
         # sourcery skip: dict-assign-update-to-union
         raw = {
             k: v for k, v in msgspec.to_builtins(self).items() if v is not None
@@ -34,34 +33,3 @@ class Event(msgspec.Struct, kw_only=True):
                 "user_id": bot_self["user_id"],
             }
         return raw
-
-
-class MetaEvent(
-    Event,
-    kw_only=True,
-):
-    type: Literal["meta"] = "meta"
-
-
-class MetaConnect(
-    MetaEvent,
-    kw_only=True,
-):
-    detail_type: Literal["connect"] = "connect"
-    version: dict[str, str]
-
-
-class MetaHeartbeat(
-    MetaEvent,
-    kw_only=True,
-):
-    detail_type: Literal["heartbeat"] = "heartbeat"
-    interval: int
-
-
-class MetaStatusUpdate(
-    MetaEvent,
-    kw_only=True,
-):
-    detail_type: Literal["status_update"] = "status_update"
-    status: Status

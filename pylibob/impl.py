@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from pylibob.connection import Connection, HTTPWebhook, ServerConnection
 from pylibob.connection_ws import WebSocketConnection, WebSocketReverse
-from pylibob.event import Event, MetaStatusUpdate
+from pylibob.event import Event, MetaStatusUpdateEvent
 from pylibob.exception import OneBotImplError
 from pylibob.runner import ClientRunner, ServerRunner
 from pylibob.status import (
@@ -305,7 +305,7 @@ class OneBotImpl:
 
     async def update_status(self) -> None:
         await self.emit(
-            MetaStatusUpdate(
+            MetaStatusUpdateEvent(
                 id=str(uuid4()),
                 time=time.time(),
                 status=self.status,

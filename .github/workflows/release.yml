@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v*
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # IMPORTANT: this permission is mandatory for trusted publishing
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: pdm-project/setup-pdm@v3
+        with:
+          python-version: "3.10"
+          cache: true
+          cache-dependency-path: ./pdm.lock
+
+      - name: Install dependencies
+        run: pdm sync
+        shell: bash
+
+      - name: Get version
+        id: version
+        run: |
+          echo "VERSION=$(pdm show --version)" >> $GITHUB_OUTPUT
+          echo "TAG_VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      - name: Check Version
+        if: steps.version.outputs.VERSION != steps.version.outputs.TAG_VERSION
+        run: exit 1
+
+      - name: Build and Publish package
+        run: |
+          pdm publish
+          gh release upload --clobber ${{ steps.version.outputs.TAG_NAME }} dist/*.tar.gz dist/*.whl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

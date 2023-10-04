@@ -14,6 +14,7 @@ dependencies = [
 requires-python = ">=3.8"
 readme = "README.md"
 dynamic = ["version"]
+keywords = ["onebot", "libonebot", "onebot12"]
 license = { text = "MIT" }
 
 [build-system]

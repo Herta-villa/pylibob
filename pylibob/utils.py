@@ -6,7 +6,7 @@ from enum import Enum, auto
 import inspect
 import logging
 import sys
-from typing import Any, Awaitable, Callable, get_origin
+from typing import Any, Awaitable, Callable, ForwardRef, cast, get_origin
 
 from pylibob.types import ActionHandler, Bot, ContentType
 
@@ -19,6 +19,9 @@ else:
 
 
 background_task = set()
+typing_logger = logging.getLogger("pylibob.utils.typing")
+task_logger = logging.getLogger("pylibob.utils.task_manager")
+lifespan_logger = logging.getLogger("pylibob.utils.lifespan_manager")
 
 
 def detect_content_type(type_: str) -> ContentType | None:
@@ -56,10 +59,69 @@ class TypingType(Enum):
     ANNOTATED = auto()
 
 
+# https://github.com/pydantic/pydantic/blob/main/pydantic/v1/typing.py#L56-L66
+if sys.version_info < (3, 9):
+
+    def evaluate_forwardref(
+        type_: ForwardRef,
+        globalns: Any,
+        localns: Any,
+    ) -> Any:
+        return type_._evaluate(globalns, localns)  # noqa: SLF001
+
+else:
+
+    def evaluate_forwardref(
+        type_: ForwardRef,
+        globalns: Any,
+        localns: Any,
+    ) -> Any:
+        # Even though it is the right signature for python 3.9,
+        # mypy complains with
+        # `error: Too many arguments for "_evaluate" of
+        # "ForwardRef"` hence the cast...
+        return cast(Any, type_)._evaluate(  # noqa: SLF001
+            globalns,
+            localns,
+            set(),
+        )
+
+
+def get_annotation(param: inspect.Parameter, globalns: dict[str, Any]) -> Any:
+    annotation = param.annotation
+    if isinstance(annotation, str):
+        annotation = ForwardRef(annotation)
+        try:
+            annotation = evaluate_forwardref(annotation, globalns, globalns)
+        except Exception as e:
+            typing_logger.warning(
+                f'Unknown ForwardRef["{param.annotation}"] '
+                f'for parameter {param.name}',
+                exc_info=e,
+            )
+            return inspect.Parameter.empty
+    return annotation
+
+
+def get_signature(call: Callable[..., Any]) -> inspect.Signature:
+    signature = inspect.signature(call)
+    globalns = getattr(call, "__globals__", {})
+    typed_params = [
+        inspect.Parameter(
+            name=param.name,
+            kind=param.kind,
+            default=param.default,
+            annotation=get_annotation(param, globalns),
+        )
+        for param in signature.parameters.values()
+    ]
+    return inspect.Signature(typed_params)
+
+
 def analytic_typing(
     func: ActionHandler,
 ):
-    signature = inspect.signature(func)
+    signature = get_signature(func)
     types: list[tuple[str, type, Any, TypingType]] = []
     for name, parameter in signature.parameters.items():
         if (annotation := parameter.annotation) is inspect.Parameter.empty:
@@ -81,10 +143,6 @@ def analytic_typing(
             type_ = (name, annotation, default, TypingType.NORMAL)
         types.append(type_)
     return types
-
-
-task_logger = logging.getLogger("pylibob.utils.task_manager")
-lifespan_logger = logging.getLogger("pylibob.utils.lifespan_manager")
 
 
 # https://code.luasoftware.com/tutorials/python/asyncio-graceful-shutdown/

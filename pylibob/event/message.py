@@ -24,6 +24,7 @@ class GroupMessageEvent(MessageEvent, kw_only=True):
     message: list[Segment]
     alt_message: str = ""
     group_id: str
+    user_id: str
 
 
 class ChannelMessageEvent(MessageEvent, kw_only=True):
@@ -32,4 +33,5 @@ class ChannelMessageEvent(MessageEvent, kw_only=True):
     message: list[Segment]
     alt_message: str = ""
     guild_id: str
+    user_id: str
     channel_id: str

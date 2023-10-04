@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from .base import Event as Event
+from .message import (
+    ChannelMessageEvent as ChannelMessageEvent,
+    GroupMessageEvent as GroupMessageEvent,
+    MessageEvent as MessageEvent,
+    PrivateMessageEvent as PrivateMessageEvent,
+)
 from .meta import (
     MetaConnectEvent as MetaConnectEvent,
     MetaEvent as MetaEvent,

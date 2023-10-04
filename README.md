@@ -4,7 +4,7 @@
 
 ## 这是什么？
 
-这是一个 Python 的 [LibOneBot](https://12.onebot.dev/glossary/#libonebot) 旨在帮助开发者快速实现 OneBot 12 标准。
+这是一个 Python 的 [LibOneBot](https://12.onebot.dev/glossary/#libonebot)，旨在帮助开发者快速实现 OneBot 12 标准。
 
 LibOneBot 对 [OneBot Connect](https://12.onebot.dev/connect/) 和动作、事件、消息段进行了包装，便于开发者使用。
 
@@ -24,11 +24,15 @@ from __future__ import annotations
 # from typing_extensions import Annotated  # python<3.9
 from typing import Annotated  # python>=3.9
 
-from pylibob.connection import HTTP, HTTPWebhook
-from pylibob.connection_ws import WebSocket, WebSocketReverse
-from pylibob.event import Event
-from pylibob.impl import OneBotImpl
-from pylibob.types import Bot
+from pylibob import (
+    HTTP,
+    Bot,
+    Event,
+    HTTPWebhook,
+    OneBotImpl,
+    WebSocket,
+    WebSocketReverse,
+)
 
 impl = OneBotImpl(
     "test",  # 实现名称

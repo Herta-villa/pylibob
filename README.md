@@ -61,24 +61,25 @@ impl = OneBotImpl(
 
 @impl.action("hello")
 async def _(
-    # 采用类型注解的方式表明参数及类型
+    # 采用类型注解的方式声明参数及类型
     a: str,
     # 扩展参数使用 Annotated，第一个 metadata 会被视为参数名
     b: Annotated[int, "extra.param"],
     # 注解为 Bot 的参数不计入动作需要的参数，会内部处理传入 Bot 实例
     c: Bot,
-    # 允许默认值，不传入使用默认值，不报错
+    # 允许默认值
     d: int = 5,
 ):
-    # 此函数接受:
-    # a (string)
-    # extra.param (int)
-    # d (int) (default = 5)
+    # 此动作 `hello` 需要必须参数:
+    #     a (string)
+    #     extra.param (int)
+    # 可选参数:
+    #     d (int) (default = 5)
 
     # 向应用推送事件
     await impl.emit(Event(...))
 
-    return a, b, c, d  # 返回的内容会传入到相应的 data
+    return a, b, c, d  # 返回的内容会传入到响应的 data
 
 # 机器人准备好后（一般指机器人登录完成）
 # 实现良好状态默认为 False，准备好需手动调整为 True

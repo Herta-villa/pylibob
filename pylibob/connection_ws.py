@@ -1,3 +1,6 @@
+"""本模块实现了 OneBot Connect 的 正反向 WebSocket 的部分
+以及 WebSocket 连接的基类。
+"""
 from __future__ import annotations
 
 import abc
@@ -5,7 +8,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, NoReturn
 from uuid import uuid4
 
 from pylibob.asgi import asgi_app, asgi_lifespan_manager
@@ -37,20 +40,45 @@ class ConnectClosed(Exception):
 
 
 class WSProtocol(abc.ABC):
+    """抽象 WS 协议类。
+
+    用于内部的统一处理。
+    """
+
     @abc.abstractmethod
-    async def send_json(self, data: Any):
+    async def send_json(self, data: Any) -> None:
+        """以 JSON 形式发送数据。
+
+        Args:
+            data (Any): 要发送的数据
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def send_msgpack(self, data: Any):
+    async def send_msgpack(self, data: Any) -> None:
+        """以 MessagePack 形式发送数据。
+
+        Args:
+            data (Any): 要发送的数据
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     async def receive(self) -> tuple[ContentType, Any]:
+        """接收数据
+
+        Returns:
+            tuple[ContentType, Any]: 前者为数据传输类型，后者为数据
+        """
         raise NotImplementedError
 
 
 class ServerWSProtocol(WSProtocol):
+    """服务器 WS 协议类。
+
+    包装 `starlette.websockets.WebSocket`。
+    """
+
     def __init__(self, ws: WS) -> None:
         self.ws = ws
 
@@ -78,6 +106,11 @@ class ServerWSProtocol(WSProtocol):
 
 
 class ClientWSProtocol(WSProtocol):
+    """客户端 WS 协议类。
+
+    包装 `aiohttp.ClientWebSocketResponse`。
+    """
+
     def __init__(self, ws: ClientWebSocketResponse) -> None:
         self.ws = ws
 
@@ -118,6 +151,17 @@ class ClientWSProtocol(WSProtocol):
 
 
 class WebSocketConnection(Connection):
+    """WebSocket 连接基类。
+
+    WebSocket 会在启用心跳时，启动心跳服务，
+    每隔 `heartbeat_interval` 毫秒发送心跳。
+
+    Attributes:
+        access_token (str | None): 访问令牌 Default to None.
+        enable_heartbeat (bool): 是否启用心跳
+        heartbeat_interval (int): 心跳间隔。单位: 毫秒
+    """
+
     def __init__(
         self,
         *,
@@ -125,6 +169,13 @@ class WebSocketConnection(Connection):
         enable_heartbeat: bool = True,
         heartbeat_interval: int = 5000,
     ) -> None:
+        """初始化 WebSocket 连接。
+
+        Args:
+            access_token (str | None): 访问令牌 Default to None.
+            enable_heartbeat (bool): 是否启用心跳
+            heartbeat_interval (int): 心跳间隔。单位: 毫秒
+        """
         super().__init__(access_token=access_token)
         self.enable_heartbeat = enable_heartbeat
         if heartbeat_interval <= 0:
@@ -149,18 +200,23 @@ class WebSocketConnection(Connection):
             except Exception:
                 logger.exception("推送心跳事件时发生异常")
 
-    async def _start_heartbeat(self):
+    async def _start_heartbeat(self) -> None:
         logger.info(f"启动 {self.__class__.__name__} 心跳服务")
         task = asyncio.create_task(self._heartbeat())
         background_task.add(task)
         task.add_done_callback(background_task.remove)
 
-    async def _stop_heartbeat(self):
+    async def _stop_heartbeat(self) -> None:
         logger.info(f"停止 {self.__class__.__name__} 心跳服务")
         self._heartbeat_run = False
         self.task_manager.cancel_all()
 
-    async def _listen_ws(self, ws: WSProtocol):
+    async def listen_ws(self, ws: WSProtocol) -> NoReturn:
+        """监听 WebSocket 连接。
+
+        Args:
+            ws (WSProtocol): WebSocket 协议实例
+        """
         while True:
             content_type, message = await ws.receive()
             resp = await self.run_action(message)
@@ -179,6 +235,18 @@ class WebSocketConnection(Connection):
 
 
 class WebSocket(WebSocketConnection, ServerConnection):
+    """正向 WebSocket 连接。
+
+    https://12.onebot.dev/connect/communication/websocket/
+
+    Attributes:
+        access_token (str | None): 访问令牌 Default to None.
+        host (str): WebSocket 服务器监听 IP
+        port (int): WebSocket 服务器端口
+        enable_heartbeat (bool): 是否启用心跳
+        heartbeat_interval (int): 心跳间隔。单位: 毫秒
+    """
+
     def __init__(
         self,
         *,
@@ -188,6 +256,15 @@ class WebSocket(WebSocketConnection, ServerConnection):
         enable_heartbeat: bool = True,
         heartbeat_interval: int = 5000,
     ) -> None:
+        """初始化正向 WebSocket 连接。
+
+        Args:
+            access_token (str | None): 访问令牌 Default to None.
+            host (str): WebSocket 服务器监听 IP
+            port (int): WebSocket 服务器端口
+            enable_heartbeat (bool): 是否启用心跳
+            heartbeat_interval (int): 心跳间隔。单位: 毫秒
+        """
         super().__init__(
             access_token=access_token,
             enable_heartbeat=enable_heartbeat,
@@ -210,7 +287,7 @@ class WebSocket(WebSocketConnection, ServerConnection):
         if self.enable_heartbeat:
             self._enable_heartbeat()
 
-    async def handle_ws_request(self, ws: WS):
+    async def handle_ws_request(self, ws: WS) -> None:
         if not authorize(self.access_token, ws):
             # 如果鉴权失败，必须返回 HTTP 状态码 401 Unauthorized
             self.logger.warning(f"{ws.url} 鉴权失败")
@@ -227,7 +304,7 @@ class WebSocket(WebSocketConnection, ServerConnection):
         )
         self.ws.append(ws_protocol)
         try:
-            await self._listen_ws(ws_protocol)
+            await self.listen_ws(ws_protocol)
         except (WebSocketDisconnect, ConnectionClosed):
             self.logger.warning(f"连接中断: {ws.url}")
             self.ws.remove(ws_protocol)
@@ -237,6 +314,17 @@ class WebSocketReverse(
     ClientConnection,
     WebSocketConnection,
 ):
+    """反向 WebSocket 连接
+
+    https://12.onebot.dev/connect/communication/websocket-reverse/
+
+    Attributes:
+        access_token (str | None): 访问令牌 Default to None.
+        reconnect_interval (int): 重连间隔。单位: 毫秒
+        enable_heartbeat (bool): 是否启用心跳
+        heartbeat_interval (int): 心跳间隔。单位: 毫秒
+    """
+
     def __init__(
         self,
         url: str,
@@ -246,6 +334,13 @@ class WebSocketReverse(
         enable_heartbeat: bool = True,
         heartbeat_interval: int = 5000,
     ) -> None:
+        """初始化反向 WebSocket 连接。
+
+        access_token (str | None): 访问令牌 Default to None.
+        reconnect_interval (int): 重连间隔。单位: 毫秒
+        enable_heartbeat (bool): 是否启用心跳
+        heartbeat_interval (int): 心跳间隔。单位: 毫秒
+        """
         super().__init__(
             url=url,
             access_token=access_token,
@@ -262,7 +357,7 @@ class WebSocketReverse(
             "pylibob.connection_ws.websocket_reverse",
         )
 
-    async def connect_to_remote(self):
+    async def connect_to_remote(self) -> NoReturn:
         async with ClientSession() as session:
             self.logger.info(f"尝试连接到反向 WS 服务器: {self.url}")
             ws_protocol: ClientWSProtocol | None = None
@@ -289,7 +384,7 @@ class WebSocketReverse(
                         self.logger.info(
                             f"连接到反向 WS 服务器 {self.url} 成功",
                         )
-                        await self._listen_ws(
+                        await self.listen_ws(
                             ws=ws_protocol,
                         )
                 except (ClientError, ConnectClosed, ConnectionError) as e:
@@ -310,5 +405,5 @@ class WebSocketReverse(
                         self.ws.remove(ws_protocol)
                         ws_protocol = None
 
-    async def run(self):
+    async def run(self) -> None:
         self.task_manager.task_nowait(self.connect_to_remote)

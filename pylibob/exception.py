@@ -18,6 +18,12 @@ from pylibob.status import (
 
 
 class OneBotImplError(Exception):
+    """OneBot 实现引发的错误。
+
+    在响应器函数中引发此错误会由 pylibob 截获
+    并转为 `failed` 的响应。
+    """
+
     def __init__(
         self,
         retcode: int,

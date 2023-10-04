@@ -1,3 +1,4 @@
+"""OneBot 动作响应状态码 `retcode`。"""
 from __future__ import annotations
 
 OK = 0

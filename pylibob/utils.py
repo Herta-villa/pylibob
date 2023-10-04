@@ -1,3 +1,4 @@
+"""pylibob 辅助函数。"""
 from __future__ import annotations
 
 import asyncio
@@ -46,7 +47,7 @@ def authorize(access_token: str | None, request: HTTPConnection) -> bool:
     )
 
 
-def asdict_exclude_none(obj):
+def asdict_exclude_none(obj) -> dict[str, Any]:
     return asdict(
         obj,
         dict_factory=lambda x: {k: v for k, v in x if v is not None},
@@ -120,7 +121,7 @@ def get_signature(call: Callable[..., Any]) -> inspect.Signature:
 
 def analytic_typing(
     func: ActionHandler,
-):
+) -> list[tuple[str, type, Any, TypingType]]:
     signature = get_signature(func)
     types: list[tuple[str, type, Any, TypingType]] = []
     for name, parameter in signature.parameters.items():
@@ -150,7 +151,7 @@ class TaskManager:
     def __init__(self):
         self.tasks = set()
 
-    async def task(self, func, result=None, *args, **kwargs):
+    async def task(self, func, result=None, *args, **kwargs) -> Any | None:
         task_logger.debug(f"添加任务: {func}({args}, {kwargs})")
         task = asyncio.create_task(func(*args, **kwargs))
         self.tasks.add(task)

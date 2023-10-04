@@ -1,3 +1,4 @@
+"""本模块实现了 OneBot 实现（OneBot Implementation）的类 `OneBotImpl`。"""
 from __future__ import annotations
 
 import asyncio
@@ -56,6 +57,23 @@ class ActionHandlerWithValidate(NamedTuple):
 
 
 class OneBotImpl:
+    """OneBot 实现类。
+
+    本类为 OneBot 实现的主体包装类:
+        动作: 使用 `action` 装饰器注册。
+        事件: 使用 `emit` 方法推送。
+    内部已实现元动作 `get_version` `get_status` `get_supported_actions`。
+    状态更新事件使用 `update_status` 方法推送。
+
+    Attributes:
+        name (str): 实现名称
+        version (str): 实现版本
+        conns (list[Connection]): 实现启用的连接列表
+        conn_types (set[str]): 实现启用的连接类型
+        onebot_version (str): OneBot 标准版本号
+        is_good (bool): OneBot 实现运行状态是否正常
+    """
+
     def __init__(
         self,
         name: str,
@@ -64,6 +82,19 @@ class OneBotImpl:
         *bots: Bot,
         onebot_version: str = "12",
     ) -> None:
+        """初始化 OneBot 实现。
+
+        Args:
+            name (str): 实现名称
+            version (str): 实现版本
+            conns (list[Connection]): 实现启用的连接列表
+            onebot_version (str, optional): OneBot 标准版本号 Defaults to "12".
+            *bots (Bot) 一系列 Bot 实例
+
+        Raises:
+            ValueError: 未提供 Bot 实例。
+            ValueError: 启用的连接为空。
+        """
         self.conns = conns
         self.conn_types = set()
         self.name = name
@@ -98,13 +129,23 @@ class OneBotImpl:
 
     @property
     def status(self) -> Status:
+        """当前 OneBot 实现的状态。
+
+        此属性会作为动作 `get_status` 的返回值，
+        也会作为状态更新事件 `meta.status_update` 的 `status`。
+        """
         return {
             "good": self.is_good,
-            "bots": [bot.dict_for_version() for bot in self.bots.values()],
+            "bots": [bot.dict_for_status() for bot in self.bots.values()],
         }
 
     @property
     def impl_ver(self) -> dict[str, str]:
+        """当前 OneBot 的版本信息。
+
+        此属性会作为动作 `get_version` 的返回值，
+        也会作为连接事件 `meta.connect` 的 `version`。
+        """
         return {
             "impl": self.name,
             "version": self.version,
@@ -116,6 +157,43 @@ class OneBotImpl:
         action: str,
         func: ActionHandler,
     ) -> ActionHandler:
+        """注册一个动作响应器。
+
+        可以注册标准动作和扩展动作（建议包含前缀）。
+        动作响应器的函数可以使用 Type Hints 声明动作参数及类型，
+        不符合 Type Hints 的动作将由 pylibob 自动返回 10003	Bad Param；
+        多余的参数会由 pylibob 自动返回 10006 Unsupported Param。
+        支持使用默认值。
+        动作响应器的返回值会作为动作响应的 `data`。
+        对于扩展参数，可以使用 Annotated 标注类型，
+        第一个 metadata 会被视为参数名。
+        对于注解为 `Bot` 的，pylibob 会内部处理为请求动作的 Bot 实例。
+
+        e.g.
+
+        @impl.action("hello")
+        async def _(
+            a: str,
+            b: Annotated[int, "extra.param"],
+            c: Bot,
+            d: int = 5,
+        ):
+            return a, b, c, d
+
+        此动作 `hello` 需要必须参数:
+            a (string)
+            extra.param (int)
+        可选参数:
+            d (int) (default = 5)
+
+
+        Args:
+            action (str): 动作名
+            func (ActionHandler): 响应器函数
+
+        Returns:
+            ActionHandler: 响应器函数
+        """
         types = analytic_typing(func)
         keys = set()
         types_dict = {}
@@ -141,6 +219,12 @@ class OneBotImpl:
         self,
         action: str,
     ) -> Callable[[ActionHandler], ActionHandler]:
+        """注册动作响应器的装饰器。
+
+        Args:
+            action (str): 动作名
+        """
+
         def wrapper(
             func: ActionHandler,
         ) -> ActionHandler:
@@ -156,6 +240,25 @@ class OneBotImpl:
         bot_self: BotSelf | None = None,
         echo: str | None = None,
     ) -> ActionResponse:
+        """处理动作请求。
+
+        不支持的动作，返回 10002 Unsupported Action。
+        当前 OneBot 实现的 Bot 大于 1 时:
+            未指定请求 Bot 的时候，返回 10101 Who Am I。
+            提供的 Bot 实例不存在时，返回 10102 Unknown Self。
+        参数类型校验失败时，返回 10003 Bad Param。
+        含有多余参数时，返回 10006 Unsupported Param。
+        运行响应器出错时，返回 20002 Internal Handler Error。
+
+        Args:
+            action (str): 动作名
+            params (dict[str, Any]): 动作参数
+            bot_self (BotSelf | None): 机器人自身标识
+            echo (str | None): 动作请求标识
+
+        Returns:
+            ActionResponse: 动作响应
+        """
         action_handler = self.actions.get(action)
         if not action_handler:
             return FailedActionResponse(
@@ -225,6 +328,14 @@ class OneBotImpl:
         event: Event,
         conns: list[Connection] | None = None,
     ) -> None:
+        """推送事件到应用端。
+
+        如果 `conns` 未指定，则将请求推送到所有连接。
+
+        Args:
+            event (Event): 事件
+            conns (list[Connection] | None): 连接列表 Default to self.conns
+        """
         if conns is None:
             conns = self.conns
         logger.debug(f"推送事件: {event}")
@@ -243,12 +354,14 @@ class OneBotImpl:
         self,
     ):
         """[元动作]获取支持的动作列表
+
         https://12.onebot.dev/interface/meta/actions/#get_supported_actions
         """
         return list(self.actions.keys())
 
     async def action_get_status(self):
         """[元动作]获取运行状态
+
         https://12.onebot.dev/interface/meta/actions/#get_status
         """
         return self.status
@@ -273,7 +386,12 @@ class OneBotImpl:
             None,
         )
 
-    def run(self):
+    def run(self) -> None:
+        """运行 OneBot 实现。
+
+        pylibob 会根据连接类型自动选择合适的
+        Runner（ServerRunner 或 ClientRunner）。
+        """
         host = self._get_host()
         ws_reverse = self._get_ws_reverse()
 
@@ -304,6 +422,10 @@ class OneBotImpl:
         asyncio.run(runner.run())
 
     async def update_status(self) -> None:
+        """更新状态。
+
+        此方法仅在连接为 WebSocket 或 HTTP Webhook 时起作用。
+        """
         await self.emit(
             MetaStatusUpdateEvent(
                 id=str(uuid4()),

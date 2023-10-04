@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Coroutine, Literal, TypedDict, cast
+from typing import Any, Callable, Coroutine, Literal, TypedDict
 
 from msgspec import Struct
 
@@ -22,7 +22,7 @@ class Bot:
     def __hash__(self) -> int:
         return hash((self.platform, self.user_id))
 
-    def to_dict(self) -> BotSelf:
+    def dict_for_version(self) -> dict[str, Any]:
         # sourcery skip: dict-assign-update-to-union
         dic = {
             "self": {
@@ -35,7 +35,13 @@ class Bot:
             dic.update(
                 {f"{self.platform}.{k}": v for k, v in self.extra.items()},
             )
-        return cast(BotSelf, dic)
+        return dic
+
+    def dict_for_self(self) -> BotSelf:
+        return {
+            "platform": self.platform,
+            "user_id": self.user_id,
+        }
 
 
 class ContentType(str, Enum):
@@ -63,4 +69,4 @@ ActionHandler = Callable[
 
 class Status(TypedDict):
     good: bool
-    bots: list[BotSelf]
+    bots: list[dict[str, Any]]

@@ -100,7 +100,7 @@ class OneBotImpl:
     def status(self) -> Status:
         return {
             "good": self.is_good,
-            "bots": [bot.to_dict() for bot in self.bots.values()],
+            "bots": [bot.dict_for_version() for bot in self.bots.values()],
         }
 
     @property

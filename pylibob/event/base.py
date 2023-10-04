@@ -28,8 +28,5 @@ class Event(msgspec.Struct, kw_only=True):
                 {f"{platform}.{k}": v for k, v in extra.items()},
             )
         if bot_self := raw.get("self"):
-            raw["self"] = {
-                "platform": bot_self["platform"],
-                "user_id": bot_self["user_id"],
-            }
+            raw["self"] = bot_self.dict_for_self()
         return raw

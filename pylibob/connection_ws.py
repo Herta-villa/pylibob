@@ -136,15 +136,18 @@ class WebSocketConnection(Connection):
 
     async def _heartbeat(self) -> None:
         while self._heartbeat_run:
-            for ws in self.ws:
-                await ws.send_json(
-                    MetaHeartbeatEvent(
-                        id=str(uuid4()),
-                        time=time.time(),
-                        interval=self.heartbeat_interval,
-                    ).dict(),
-                )
-            await asyncio.sleep(self.heartbeat_interval / 1000)
+            try:
+                for ws in self.ws:
+                    await ws.send_json(
+                        MetaHeartbeatEvent(
+                            id=str(uuid4()),
+                            time=time.time(),
+                            interval=self.heartbeat_interval,
+                        ).dict(),
+                    )
+                await asyncio.sleep(self.heartbeat_interval / 1000)
+            except Exception:
+                logger.exception("推送心跳事件时发生异常")
 
     async def _start_heartbeat(self):
         logger.info(f"启动 {self.__class__.__name__} 心跳服务")
@@ -300,6 +303,8 @@ class WebSocketReverse(
                     await asyncio.sleep(
                         self.reconnect_interval / 1000,
                     )
+                except Exception:
+                    self.logger.exception("监听 WS 连接时出错")
                 finally:
                     if ws_protocol:
                         self.ws.remove(ws_protocol)

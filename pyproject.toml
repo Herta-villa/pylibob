@@ -1,7 +1,7 @@
 
 [project]
 name = "pylibob"
-description = "非官方 LibOneBot Python 库，旨在帮助开发者实现 OneBot 12 标准。"
+description = "另一个 LibOneBot Python 库，旨在帮助开发者实现 OneBot 12 标准。"
 authors = [{ name = "MingxuanGame", email = "MingxuanGame@outlook.com" }]
 dependencies = [
     "starlette>=0.27.0",

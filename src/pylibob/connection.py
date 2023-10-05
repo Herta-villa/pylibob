@@ -322,7 +322,7 @@ class HTTPWebhook(ClientConnection):
         url: str,
         *,
         access_token: str | None = None,
-        timeout: int = 5,
+        timeout: int = 5000,
     ) -> None:
         """初始化 HTTP Webhook 连接。
 
@@ -348,14 +348,13 @@ class HTTPWebhook(ClientConnection):
 
     async def emit_event(self, event: Event) -> None:
         async with ClientSession(
-            timeout=self.timeout,
             headers=self._make_header(),
         ) as session:
             event_json = event.dict()
             self.logger.debug(f"[SEND => {self.url}] {event_json}")
             async with session.post(
                 self.url,
-                timeout=ClientTimeout(total=self.timeout),
+                timeout=ClientTimeout(total=self.timeout / 1000),
                 json=event_json,
             ) as resp:
                 if resp.status == HTTP_204_NO_CONTENT:

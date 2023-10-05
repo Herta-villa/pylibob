@@ -1,3 +1,4 @@
+"""[事件（Event）](https://12.onebot.dev/glossary/#event)。"""
 from __future__ import annotations
 
 from .base import Event as Event

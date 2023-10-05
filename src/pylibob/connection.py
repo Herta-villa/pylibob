@@ -41,14 +41,19 @@ logger = logging.getLogger("pylibob.connection")
 class Connection:
     """连接基类。
 
-    `init_connection` 方法为初始化连接的方法，
-    用于在 `impl` 确定后继续初始化。
-    顺序: __init__ -> 确定 impl -> init_connection
+    `init_connection` 方法为初始化连接的方法，用于在 `impl` 确定后继续初始化。
+    顺序如下:
+    ``` mermaid
+    graph LR
+        A[__init__] --> B[确定 impl] --> C[init_connection]
+    ```
+
     `run_action` 用于以原始数据运行动作响应器。
+
     `emit_event` 用于向应用端推送事件，需各连接自行实现。
 
     Attributes:
-        access_token (str | None): 访问令牌 Default to None.
+        access_token (str | None): 访问令牌
         impl (OneBotImpl): OneBot 实现实例
     """
 
@@ -60,7 +65,7 @@ class Connection:
         """初始化连接。
 
         Args:
-            access_token (str | None): 访问令牌 Default to None.
+            access_token (str | None): 访问令牌
         """
         self.access_token = access_token
         self._impl: "OneBotImpl" | None = None
@@ -79,7 +84,7 @@ class Connection:
     ) -> ActionResponse:
         """以原始数据运行动作响应器。
 
-        未传入 `action` 或 `params` 时返回 10001 Bad Request。
+        - 未传入 `action` 或 `params` 时返回 10001 Bad Request。
 
         Args:
             data (dict[str, Any]): 原始数据
@@ -118,7 +123,7 @@ class ServerConnection(Connection):
     服务器连接会由 ServerRunner 运行（uvicorn）。
 
     Attributes:
-        access_token (str | None): 访问令牌 Default to None.
+        access_token (str | None): 访问令牌
         host (str): 服务器监听 IP
         port (int): 服务器监听端口
     """
@@ -133,7 +138,7 @@ class ServerConnection(Connection):
         """初始化服务器连接。
 
         Args:
-            access_token (str | None): 访问令牌 Default to None.
+            access_token (str | None): 访问令牌
             host (str): 服务器监听 IP
             port (int): 服务器监听端口
         """
@@ -143,18 +148,16 @@ class ServerConnection(Connection):
 
 
 class HTTP(ServerConnection):
-    """HTTP 连接。
+    """[HTTP 连接](https://12.onebot.dev/connect/communication/http/)。
 
-    https://12.onebot.dev/connect/communication/http/
-    当启用 `get_latest_events` 元动作时，
-    连接会创建一个大小为 `event_buffer_size` 的事件队列 `event_queue`。
+    当启用 `get_latest_events` 元动作时，连接会创建一个大小为 `event_buffer_size` 的事件队列 `event_queue`。
 
     Attributes:
-        access_token (str | None): 访问令牌 Default to None.
+        access_token (str | None): 访问令牌
         host (str): HTTP 服务器监听 IP
         port (int): HTTP 服务器监听端口
         event_queue (Queue[Event] | None): 事件队列
-    """
+    """  # noqa: E501
 
     def __init__(
         self,
@@ -168,7 +171,7 @@ class HTTP(ServerConnection):
         """初始化 HTTP 连接。
 
         Args:
-            access_token (str | None): 访问令牌 Default to None.
+            access_token (str | None): 访问令牌
             host (str): HTTP 服务器监听 IP
             port (int): HTTP 服务器监听端口
             event_enabled (bool): 是否启用 `get_latest_events` 元动作
@@ -239,10 +242,7 @@ class HTTP(ServerConnection):
         )
 
     async def action_get_latest_events(self, limit: int = 0, timeout: int = 0):
-        """[元动作]获取最新事件列表
-
-        https://12.onebot.dev/interface/meta/actions/#get_latest_events
-        """
+        """[获取最新事件列表](https://12.onebot.dev/interface/meta/actions/#get_latest_events)"""
         # TODO: long polling
         assert self.event_queue
         times = 1
@@ -278,8 +278,9 @@ class ClientConnection(Connection):
     """客户端连接（HTTP Webhook/反向 WebSocket）基类。
 
     Attributes:
-        access_token (str | None): 访问令牌 Default to None.
+        access_token (str | None): 访问令牌
         url (str): OneBot 应用的连接目标地址
+        ua (str): 连接时使用的 User-Agent
     """
 
     def __init__(
@@ -291,9 +292,8 @@ class ClientConnection(Connection):
         """初始化客户端连接。
 
         Args:
-            access_token (str | None): 访问令牌 Default to None.
+            access_token (str | None): 访问令牌
             url (str): OneBot 应用的连接目标地址
-            ua (str): 连接时使用的 User-Agent
         """
         super().__init__(access_token=access_token)
         self.url = url
@@ -309,12 +309,10 @@ class ClientConnection(Connection):
 
 
 class HTTPWebhook(ClientConnection):
-    """HTTP Webhook 连接。
-
-    https://12.onebot.dev/connect/communication/http-webhook/
+    """[HTTP Webhook 连接](https://12.onebot.dev/connect/communication/http-webhook/)。
 
     Attributes:
-        access_token (str | None): 访问令牌 Default to None.
+        access_token (str | None): 访问令牌
         url (str): Webhook 上报地址
         timeout (int): 上报请求超时时间，单位: 毫秒，0 表示不超时
     """
@@ -329,7 +327,7 @@ class HTTPWebhook(ClientConnection):
         """初始化 HTTP Webhook 连接。
 
         Args:
-            access_token (str | None): 访问令牌 Default to None.
+            access_token (str | None): 访问令牌
             url (str): Webhook 上报地址
             timeout (int): 上报请求超时时间，单位: 毫秒，0 表示不超时
         """

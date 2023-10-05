@@ -59,10 +59,13 @@ class ActionHandlerWithValidate(NamedTuple):
 class OneBotImpl:
     """OneBot 实现类。
 
-    本类为 OneBot 实现的主体包装类:
+    OneBot 实现的主体包装:
         动作: 使用 `action` 装饰器注册。
+
         事件: 使用 `emit` 方法推送。
+
     内部已实现元动作 `get_version` `get_status` `get_supported_actions`。
+
     状态更新事件使用 `update_status` 方法推送。
 
     Attributes:
@@ -89,7 +92,7 @@ class OneBotImpl:
             version (str): 实现版本
             conns (list[Connection]): 实现启用的连接列表
             onebot_version (str, optional): OneBot 标准版本号 Defaults to "12".
-            *bots (Bot) 一系列 Bot 实例
+            *bots (Bot): 一系列 Bot 实例
 
         Raises:
             ValueError: 未提供 Bot 实例。
@@ -120,20 +123,19 @@ class OneBotImpl:
             conn.init_connection()
             self.conn_types.add(conn.__class__)
 
-        self.register_action_handler("get_status", self.action_get_status)
-        self.register_action_handler("get_version", self.action_get_version)
+        self.register_action_handler("get_status", self._action_get_status)
+        self.register_action_handler("get_version", self._action_get_version)
         self.register_action_handler(
             "get_supported_actions",
-            self.action_get_supported_actions,
+            self._action_get_supported_actions,
         )
 
     @property
     def status(self) -> Status:
         """当前 OneBot 实现的状态。
 
-        此属性会作为动作 `get_status` 的返回值，
-        也会作为状态更新事件 `meta.status_update` 的 `status`。
-        """
+        此属性会作为动作 `get_status` 的返回值，也会作为状态更新事件 `meta.status_update` 的 `status`。
+        """  # noqa: E501
         return {
             "good": self.is_good,
             "bots": [bot.dict_for_status() for bot in self.bots.values()],
@@ -143,9 +145,8 @@ class OneBotImpl:
     def impl_ver(self) -> dict[str, str]:
         """当前 OneBot 的版本信息。
 
-        此属性会作为动作 `get_version` 的返回值，
-        也会作为连接事件 `meta.connect` 的 `version`。
-        """
+        此属性会作为动作 `get_version` 的返回值，也会作为连接事件 `meta.connect` 的 `version`。
+        """  # noqa: E501
         return {
             "impl": self.name,
             "version": self.version,
@@ -160,40 +161,46 @@ class OneBotImpl:
         """注册一个动作响应器。
 
         可以注册标准动作和扩展动作（建议包含前缀）。
-        动作响应器的函数可以使用 Type Hints 声明动作参数及类型，
-        不符合 Type Hints 的动作将由 pylibob 自动返回 10003	Bad Param；
-        多余的参数会由 pylibob 自动返回 10006 Unsupported Param。
-        支持使用默认值。
-        动作响应器的返回值会作为动作响应的 `data`。
-        对于扩展参数，可以使用 Annotated 标注类型，
-        第一个 metadata 会被视为参数名。
+
+        动作响应器的函数可以使用 Type Hints 声明动作参数及类型，不符合 Type Hints 的动作将由 pylibob 自动返回 `10003 Bad Param`；
+        多余的参数会由 pylibob 自动返回 `10006 Unsupported Param`。
+
+        对于扩展参数，可以使用 Annotated 标注类型，第一个 metadata 会被视为参数名。
+
         对于注解为 `Bot` 的，pylibob 会内部处理为请求动作的 Bot 实例。
 
-        e.g.
+        支持使用默认值。
 
-        @impl.action("hello")
-        async def _(
-            a: str,
-            b: Annotated[int, "extra.param"],
-            c: Bot,
-            d: int = 5,
-        ):
-            return a, b, c, d
+        动作响应器的返回值会作为动作响应的 `data`。
 
-        此动作 `hello` 需要必须参数:
-            a (string)
-            extra.param (int)
-        可选参数:
-            d (int) (default = 5)
+        示例:
+            ```python
+            @impl.action("hello")
+            async def _(
+                a: str,
+                b: Annotated[int, "extra.param"],
+                c: Bot,
+                d: int = 5,
+            ):
+                return a, b, c, d
+            ```
 
+            此动作 `hello` 需要必须参数:
+
+                a (string)
+                extra.param (int)
+
+            可选参数:
+
+                d (int) (default = 5)
 
         Args:
             action (str): 动作名
             func (ActionHandler): 响应器函数
 
         Returns:
-            ActionHandler: 响应器函数
-        """
+            响应器函数
+        """  # noqa: E501
         types = analytic_typing(func)
         keys = set()
         types_dict = {}
@@ -242,13 +249,14 @@ class OneBotImpl:
     ) -> ActionResponse:
         """处理动作请求。
 
-        不支持的动作，返回 10002 Unsupported Action。
-        当前 OneBot 实现的 Bot 大于 1 时:
-            未指定请求 Bot 的时候，返回 10101 Who Am I。
-            提供的 Bot 实例不存在时，返回 10102 Unknown Self。
-        参数类型校验失败时，返回 10003 Bad Param。
-        含有多余参数时，返回 10006 Unsupported Param。
-        运行响应器出错时，返回 20002 Internal Handler Error。
+        pylibob 自动处理的返回:
+            - 不支持的动作，返回 `10002 Unsupported Action`。
+            - 当前 OneBot 实现的 Bot 大于 1 时:
+                - 未指定请求 Bot 的时候，返回 `10101 Who Am I`。
+                - 提供的 Bot 实例不存在时，返回 `10102 Unknown Self`。
+            - 参数类型校验失败时，返回 `10003 Bad Param`。
+            - 含有多余参数时，返回 `10006 Unsupported Param`。
+            - 运行响应器出错时，返回 `20002 Internal Handler Error`。
 
         Args:
             action (str): 动作名
@@ -257,7 +265,7 @@ class OneBotImpl:
             echo (str | None): 动作请求标识
 
         Returns:
-            ActionResponse: 动作响应
+            动作响应
         """
         action_handler = self.actions.get(action)
         if not action_handler:
@@ -344,13 +352,13 @@ class OneBotImpl:
             background_task.add(task)
             task.add_done_callback(background_task.remove)
 
-    async def action_get_version(self):
+    async def _action_get_version(self):
         """[元动作]获取版本信息
         https://12.onebot.dev/interface/meta/actions/#get_version
         """
         return self.impl_ver
 
-    async def action_get_supported_actions(
+    async def _action_get_supported_actions(
         self,
     ):
         """[元动作]获取支持的动作列表
@@ -359,7 +367,7 @@ class OneBotImpl:
         """
         return list(self.actions.keys())
 
-    async def action_get_status(self):
+    async def _action_get_status(self):
         """[元动作]获取运行状态
 
         https://12.onebot.dev/interface/meta/actions/#get_status

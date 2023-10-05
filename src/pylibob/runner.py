@@ -1,3 +1,4 @@
+"""OneBot Connect 连接 Runner。"""
 from __future__ import annotations
 
 import abc
@@ -20,28 +21,53 @@ logger = logging.getLogger("pylibob.runner")
 
 
 class Runner(abc.ABC):
+    """抽象运行器基类。
+
+    Attributes:
+        lifespan_manager (LifespanManager): 异步生命周期管理器
+    """
+
     @abc.abstractmethod
-    async def run(self):
+    async def run(self) -> None:
+        """启动运行器。"""
         raise NotImplementedError
 
     @abc.abstractmethod
-    def on_startup(self, func: L_FUNC):
+    def on_startup(self, func: L_FUNC) -> None:
+        """添加 startup 生命周期函数。"""
         raise NotImplementedError
 
     @abc.abstractmethod
-    def on_shutdown(self, func: L_FUNC):
+    def on_shutdown(self, func: L_FUNC) -> None:
+        """添加 shutdown 生命周期。"""
         raise NotImplementedError
 
     @abc.abstractproperty
     def lifespan_manager(self) -> LifespanManager:
+        """异步生命周期管理器。"""
         raise NotImplementedError
 
 
 class ServerRunner(Runner):
+    """服务器运行器。
+
+    Attributes:
+        host (str): 服务器监听 IP
+        port (int): 服务器监听端口
+        uvicorn_params (dict[str, Any]): 传入到 uvicorn 的其他参数
+    """
+
     def __init__(self, host: str, port: int, **kwargs: Any) -> None:
+        """初始化服务器运行器。
+
+        Args:
+            host (str): 服务器监听 IP
+            port (int): 服务器监听端口
+            **kwargs: 传入到 uvicorn 的其他参数
+        """
         self.host = host
         self.port = port
-        self.uvicorn_params = kwargs
+        self.uvicorn_params: dict[str, Any] = kwargs
 
     async def run(self):
         logger.info("启动 ServerRunner")
@@ -66,7 +92,18 @@ class ServerRunner(Runner):
 
 
 class ClientRunner(Runner):
+    """客户端运行器。
+
+    Attributes:
+        task_manager (TaskManager): 任务管理器
+    """
+
     def __init__(self, task_manager: TaskManager) -> None:
+        """初始化客户端运行器。
+
+        Args:
+            task_manager (TaskManager): 任务管理器
+        """
         self.should_exit: asyncio.Event = asyncio.Event()
         self.force_exit: bool = False
         self.task_manager = task_manager

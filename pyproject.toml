@@ -22,10 +22,19 @@ requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [tool.pdm]
-version = { source = "file", path = "pylibob/version.py" }
+version = { source = "file", path = "src/pylibob/version.py" }
 
 [tool.pdm.dev-dependencies]
 dev = ["ruff>=0.0.291", "black>=23.9.1"]
+docs = [
+    "mkdocs>=1.5.3",
+    "mkdocs-material[imaging]>=9.4.3",
+    "pymdown-extensions>=10.3",
+    "mkdocs-literate-nav>=0.6.1",
+    "mkdocstrings[python]>=0.23.0",
+    "mkdocs-gen-files>=0.5.0",
+    "mkdocs-section-index>=0.3.8",
+]
 
 [tool.ruff]
 line-length = 79
@@ -83,7 +92,7 @@ fix = "ruff check --fix ."
 reportShadowedImports = false
 pythonVersion = "3.8"
 pythonPlatform = "All"
-executionEnvironments = [{ root = "./" }]
+executionEnvironments = [{ root = "./src/" }]
 
 [tool.black]
 extend-exclude = '''

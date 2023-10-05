@@ -18,7 +18,7 @@ def detect_content_type(type_: str) -> ContentType | None:
         type_ (str): MIME Type
 
     Returns:
-        ContentType | None: Content-Type
+        Content-Type
     """
 
 def authorize(access_token: str | None, request: HTTPConnection) -> bool:
@@ -31,7 +31,7 @@ def authorize(access_token: str | None, request: HTTPConnection) -> bool:
         request (HTTPConnection): 请求
 
     Returns:
-        bool: 鉴权通过
+        鉴权是否通过
     """
 
 class TypingType(Enum):
@@ -54,7 +54,7 @@ def evaluate_forwardref(
         localns (Any): 当前局部作用域
 
     Returns:
-        Any: 解析后的类型
+        解析后的类型
     """
 
 def get_signature(call: Callable[..., Any]) -> inspect.Signature:
@@ -64,7 +64,7 @@ def get_signature(call: Callable[..., Any]) -> inspect.Signature:
         call (Callable[..., Any]): 函数
 
     Returns:
-        inspect.Signature: 函数签名
+        函数签名
     """
 
 def analytic_typing(
@@ -73,16 +73,16 @@ def analytic_typing(
     """分析动作响应器类型。
 
     类型信息:
-        0: 参数名称
-        1: 参数类型
-        2: 参数默认值（若为空则为 `inspect.Parameter.empty`）
-        3: 参数的类型标注类型
+        - 0: 参数名称
+        - 1: 参数类型
+        - 2: 参数默认值（若为空则为 `inspect.Parameter.empty`）
+        - 3: 参数的类型标注类型
 
     Args:
         func (ActionHandler): 动作响应器
 
     Returns:
-        list[tuple[str, type, Any, TypingType]]: 一个含有类型信息的列表
+        一个含有类型信息的列表
     """
 
 class TaskManager:

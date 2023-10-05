@@ -34,7 +34,7 @@ class Bot:
         """转换为机器人状态字典。
 
         Returns:
-            dict[str, Any]: 机器人状态字典
+            机器人状态字典
         """
         # sourcery skip: dict-assign-update-to-union
         dic = {
@@ -54,7 +54,7 @@ class Bot:
         """转换为机器人自身标识字典。
 
         Returns:
-            BotSelf: 机器人自身标识字典
+            机器人自身标识字典
         """
         return {
             "platform": self.platform,

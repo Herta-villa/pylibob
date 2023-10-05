@@ -1,3 +1,4 @@
+"""pylibob -- 另一个 Python [LibOneBot](https://12.onebot.dev/glossary/#libonebot)。"""
 from __future__ import annotations
 
 from .connection import (

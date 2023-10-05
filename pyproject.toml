@@ -17,6 +17,12 @@ dynamic = ["version"]
 keywords = ["onebot", "libonebot", "onebot12"]
 license = { text = "MIT" }
 
+[project.urls]
+Homepage = "https://pylibob.mxgame.top"
+Documentation = "https://pylibob.mxgame.top"
+Repository = "https://github.com/Herta-villa/pylibob"
+"Bug Tracker" = "https://github.com/Herta-villa/pylibob/issues"
+
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
